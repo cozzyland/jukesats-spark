@@ -1,10 +1,4 @@
-interface TapRecord {
-  userArkAddress: string
-  venueId: string
-  nfcTagId: string
-  timestamp: number
-  rewardSats: number
-}
+import type Database from 'better-sqlite3'
 
 interface UserStats {
   totalTaps: number
@@ -14,25 +8,71 @@ interface UserStats {
 }
 
 /**
- * Tracks taps for rate limiting and analytics
- * In production, use Redis or a proper database
+ * Tracks taps for rate limiting and analytics using SQLite
  */
 export class TapTracker {
-  private taps: TapRecord[] = []
-  private userLastTap: Map<string, Map<string, number>> = new Map() // user -> venue -> timestamp
-  private ipTaps: Map<string, number[]> = new Map() // ip -> timestamps
+  private stmtInsert
+  private stmtLastTapAtVenue
+  private stmtIpTapsLastHour
+  private stmtTodaySpend
+  private stmtUserStats
+  private stmtUserVenues
+  private stmtVenueStats
+  private stmtVenueUniqueUsers
+
+  constructor(private db: Database.Database) {
+    this.stmtInsert = db.prepare(`
+      INSERT INTO taps (user_ark_address, venue_id, nfc_tag_id, reward_sats, ip, created_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `)
+
+    this.stmtLastTapAtVenue = db.prepare(`
+      SELECT created_at FROM taps
+      WHERE user_ark_address = ? AND venue_id = ?
+      ORDER BY created_at DESC LIMIT 1
+    `)
+
+    this.stmtIpTapsLastHour = db.prepare(`
+      SELECT COUNT(*) as count, MIN(created_at) as oldest
+      FROM taps WHERE ip = ? AND created_at > ?
+    `)
+
+    this.stmtTodaySpend = db.prepare(`
+      SELECT COALESCE(SUM(reward_sats), 0) as total
+      FROM taps WHERE created_at >= ?
+    `)
+
+    this.stmtUserStats = db.prepare(`
+      SELECT COUNT(*) as totalTaps,
+             COALESCE(SUM(reward_sats), 0) as totalRewardsSats,
+             MAX(created_at) as lastTap
+      FROM taps WHERE user_ark_address = ?
+    `)
+
+    this.stmtUserVenues = db.prepare(`
+      SELECT DISTINCT venue_id FROM taps WHERE user_ark_address = ?
+    `)
+
+    this.stmtVenueStats = db.prepare(`
+      SELECT COUNT(*) as totalTaps,
+             COALESCE(SUM(reward_sats), 0) as totalRewardsSats
+      FROM taps WHERE venue_id = ?
+    `)
+
+    this.stmtVenueUniqueUsers = db.prepare(`
+      SELECT COUNT(DISTINCT user_ark_address) as uniqueUsers
+      FROM taps WHERE venue_id = ?
+    `)
+  }
 
   /**
    * Check if a user can tap at a venue (per-address rate limiting)
    */
   canTap(userArkAddress: string, venueId: string, cooldownMs: number): { allowed: boolean; retryAfterMs?: number } {
-    const userTaps = this.userLastTap.get(userArkAddress)
-    if (!userTaps) return { allowed: true }
+    const row = this.stmtLastTapAtVenue.get(userArkAddress, venueId) as { created_at: number } | undefined
+    if (!row) return { allowed: true }
 
-    const lastTapAt = userTaps.get(venueId)
-    if (!lastTapAt) return { allowed: true }
-
-    const timeSinceTap = Date.now() - lastTapAt
+    const timeSinceTap = Date.now() - row.created_at
     if (timeSinceTap < cooldownMs) {
       return {
         allowed: false,
@@ -49,17 +89,12 @@ export class TapTracker {
   canTapFromIp(ip: string, maxPerHour: number): { allowed: boolean; retryAfterMs?: number } {
     const now = Date.now()
     const hourAgo = now - 60 * 60 * 1000
-    const timestamps = this.ipTaps.get(ip) || []
+    const row = this.stmtIpTapsLastHour.get(ip, hourAgo) as { count: number; oldest: number | null }
 
-    // Filter to last hour
-    const recentTaps = timestamps.filter(t => t > hourAgo)
-    this.ipTaps.set(ip, recentTaps)
-
-    if (recentTaps.length >= maxPerHour) {
-      const oldest = recentTaps[0]
+    if (row.count >= maxPerHour) {
       return {
         allowed: false,
-        retryAfterMs: oldest + 60 * 60 * 1000 - now
+        retryAfterMs: (row.oldest! + 60 * 60 * 1000) - now
       }
     }
 
@@ -70,31 +105,7 @@ export class TapTracker {
    * Record a successful tap
    */
   recordTap(userArkAddress: string, venueId: string, nfcTagId: string, rewardSats: number, ip: string): void {
-    const now = Date.now()
-
-    // Store in history
-    this.taps.push({
-      userArkAddress,
-      venueId,
-      nfcTagId,
-      timestamp: now,
-      rewardSats
-    })
-
-    // Update last tap time for rate limiting
-    if (!this.userLastTap.has(userArkAddress)) {
-      this.userLastTap.set(userArkAddress, new Map())
-    }
-    this.userLastTap.get(userArkAddress)!.set(venueId, now)
-
-    // Record IP tap
-    const ipTimestamps = this.ipTaps.get(ip) || []
-    ipTimestamps.push(now)
-    this.ipTaps.set(ip, ipTimestamps)
-
-    // Cleanup old records (keep last 24 hours)
-    const cutoff = now - 24 * 60 * 60 * 1000
-    this.taps = this.taps.filter(t => t.timestamp > cutoff)
+    this.stmtInsert.run(userArkAddress, venueId, nfcTagId, rewardSats, ip, Date.now())
   }
 
   /**
@@ -103,28 +114,24 @@ export class TapTracker {
   getTodaySpend(): number {
     const startOfDay = new Date()
     startOfDay.setHours(0, 0, 0, 0)
-    const cutoff = startOfDay.getTime()
-
-    return this.taps
-      .filter(t => t.timestamp >= cutoff)
-      .reduce((sum, t) => sum + t.rewardSats, 0)
+    const row = this.stmtTodaySpend.get(startOfDay.getTime()) as { total: number }
+    return row.total
   }
 
   /**
    * Get stats for a user
    */
-  getUserStats(userArkAddress: string, rewardSats: number): UserStats {
-    const userTaps = this.taps.filter(t => t.userArkAddress === userArkAddress)
-    const venues = [...new Set(userTaps.map(t => t.venueId))]
-    const lastTap = userTaps.length > 0
-      ? Math.max(...userTaps.map(t => t.timestamp))
-      : null
+  getUserStats(userArkAddress: string, _rewardSats: number): UserStats {
+    const stats = this.stmtUserStats.get(userArkAddress) as {
+      totalTaps: number; totalRewardsSats: number; lastTap: number | null
+    }
+    const venueRows = this.stmtUserVenues.all(userArkAddress) as { venue_id: string }[]
 
     return {
-      totalTaps: userTaps.length,
-      totalRewardsSats: userTaps.reduce((sum, t) => sum + t.rewardSats, 0),
-      lastTap,
-      venues
+      totalTaps: stats.totalTaps,
+      totalRewardsSats: stats.totalRewardsSats,
+      lastTap: stats.lastTap,
+      venues: venueRows.map(r => r.venue_id)
     }
   }
 
@@ -132,13 +139,13 @@ export class TapTracker {
    * Get venue stats (for venue dashboard)
    */
   getVenueStats(venueId: string) {
-    const venueTaps = this.taps.filter(t => t.venueId === venueId)
-    const uniqueUsers = new Set(venueTaps.map(t => t.userArkAddress))
+    const stats = this.stmtVenueStats.get(venueId) as { totalTaps: number; totalRewardsSats: number }
+    const users = this.stmtVenueUniqueUsers.get(venueId) as { uniqueUsers: number }
 
     return {
-      totalTaps: venueTaps.length,
-      uniqueUsers: uniqueUsers.size,
-      totalRewardsSats: venueTaps.reduce((sum, t) => sum + t.rewardSats, 0)
+      totalTaps: stats.totalTaps,
+      uniqueUsers: users.uniqueUsers,
+      totalRewardsSats: stats.totalRewardsSats
     }
   }
 }

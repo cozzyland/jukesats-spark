@@ -1,5 +1,11 @@
-import { describe, it, expect, beforeAll, vi } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import request from 'supertest'
+
+// Mock db to use in-memory SQLite
+vi.mock('../db.js', async () => {
+  const { createDb } = await vi.importActual<typeof import('../db.js')>('../db.js')
+  return { createDb: () => createDb(':memory:') }
+})
 
 // Mock hotWallet before importing main
 vi.mock('../hotWallet.js', () => ({

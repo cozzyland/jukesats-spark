@@ -1,16 +1,21 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { TapTracker } from '../tapTracker.js'
+import { createDb } from '../db.js'
+import type Database from 'better-sqlite3'
 
 describe('TapTracker', () => {
   let tracker: TapTracker
+  let db: Database.Database
 
   beforeEach(() => {
     vi.useFakeTimers()
-    tracker = new TapTracker()
+    db = createDb(':memory:')
+    tracker = new TapTracker(db)
   })
 
   afterEach(() => {
     vi.useRealTimers()
+    db.close()
   })
 
   describe('canTap', () => {

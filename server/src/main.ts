@@ -5,6 +5,7 @@ import path from 'path'
 import { fileURLToPath } from 'url'
 import { hotWallet } from './hotWallet.js'
 import { TapTracker } from './tapTracker.js'
+import { createDb } from './db.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -30,8 +31,9 @@ app.get('/tap', (req, res) => {
   res.sendFile(path.join(__dirname, '../public/tap.html'))
 })
 
-// In-memory tap tracker (use Redis/DB in production)
-export const tapTracker = new TapTracker()
+// SQLite database + tap tracker
+const db = createDb()
+export const tapTracker = new TapTracker(db)
 
 // Config
 export const DEFAULT_REWARD_SATS = parseInt(process.env.DEFAULT_REWARD_SATS || '330', 10)

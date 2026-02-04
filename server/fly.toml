@@ -12,6 +12,7 @@ primary_region = 'lhr'
   DAILY_SPEND_CAP_SATS = "100000"
   IP_RATE_LIMIT_MAX = "10"
   ENABLE_SIMULATE_TAP = "false"
+  DB_PATH = "/data/jukesats.db"
 
 [http_service]
   internal_port = 3001
