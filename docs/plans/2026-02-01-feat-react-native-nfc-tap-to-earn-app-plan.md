@@ -2,13 +2,58 @@
 title: "feat: React Native NFC Tap-to-Earn App"
 type: feat
 date: 2026-02-01
+updated: 2026-02-04
 ---
 
 # React Native NFC Tap-to-Earn App for Jukesats
 
+## Implementation Status (Updated 2026-02-04)
+
+**Repo:** `https://github.com/cozzyland/jukesats-app` — monorepo (Expo app at root, server in `server/`)
+
+| Phase | Status | Notes |
+|-------|--------|-------|
+| Phase 1: Server Hardening | **DONE** | All tasks complete, compiles clean |
+| Phase 2: App Setup + Wallet + Deep Links | **DONE** | All tasks complete, compiles clean |
+| Phase 3: UI States | **DONE** | Single-screen UI with all overlays built |
+| Phase 3: EAS Build config | **DONE** | `eas.json` created |
+| Phase 3: Build & TestFlight | **NOT STARTED** | Needs Apple Developer account, signing |
+| NFC end-to-end testing | **NOT STARTED** | Needs physical device + NFC tags |
+
+### Critical SDK Finding
+
+**`SingleKey.toAddress()` does NOT exist** in `@arkade-os/sdk`. The plan originally assumed synchronous address derivation, but the SDK requires `wallet.getAddress()` which is async and needs the ARK server's public key (network call). This means:
+- First-time users MUST go through full `initWallet()` before any tap can be submitted
+- Returning users with a cached address (from AsyncStorage) can still do parallel tap + wallet init
+- The wallet service exports `getCachedAddress()` for the fast path
+
+### Architecture Change from Plan
+
+The plan originally said "creates a new repo" for the app only, with server staying in `jukesats`. Instead, `jukesats-app` is a **monorepo** — server source lives in `server/`, Expo app at root. The `jukesats` repo remains as PWA legacy only.
+
+### Key Files
+
+| File | Description |
+|------|-------------|
+| `App.tsx` | Single-screen app with 5 state overlays, deep link handling |
+| `src/wallet.ts` | ARK wallet service with dedup promise, cached address |
+| `src/polyfills.ts` | `expo-crypto` getRandomValues shim |
+| `metro.config.js` | Package exports + inline requires |
+| `index.ts` | Entry point, imports polyfills first |
+| `app.json` | Deep links, NFC description, bundle IDs |
+| `eas.json` | EAS Build profiles (dev/preview/production) |
+| `server/src/main.ts` | Express server with hardened /tap endpoint |
+| `server/src/tapTracker.ts` | Rate limiting, IP tracking, spend cap |
+| `server/src/hotWallet.ts` | ARK wallet for dispensing sats |
+| `server/src/bootstrap.ts` | Server startup |
+| `server/fly.toml` | Fly.io deployment config |
+| `server/public/` | .well-known files, fallback tap.html |
+
+---
+
 ## Overview
 
-Build a React Native (Expo) mobile app for iOS and Android that enables users to earn Bitcoin (sats) by tapping their phone on NFC tags at partner cafes. The app reuses the existing Jukesats server (`https://jukesats-server.fly.dev`) and creates a new repo.
+Build a React Native (Expo) mobile app for iOS and Android that enables users to earn Bitcoin (sats) by tapping their phone on NFC tags at partner cafes. Monorepo: Expo app at root, server in `server/`.
 
 NFC tag reading is handled by the phone's OS via deep links (Universal Links on iOS, App Links on Android) — no NFC library required. The ARK SDK has first-class Expo support with dedicated adapters.
 
@@ -41,6 +86,7 @@ NFC Tag (NTAG213)           Phone OS                 Expo App                  E
 | Private keys | `expo-secure-store` | Hardware-backed iOS Keychain / Android Keystore |
 | SSE streaming | `ExpoArkProvider` + `ExpoIndexerProvider` | SDK built-in, uses expo/fetch |
 | Crypto polyfill | `expo-crypto` (~10KB) | SDK only needs `getRandomValues()` — not full `react-native-quick-crypto` |
+| Address derivation | `wallet.getAddress()` (async) | `SingleKey.toAddress()` does NOT exist — requires ARK server pubkey |
 | NFC tags | NDEF URL (NTAG213, ~$0.10/tag) | Sufficient with server-side rate limiting |
 | Dev builds | Expo prebuild (no Expo Go) | Custom dev client required |
 
@@ -54,14 +100,14 @@ The server has live vulnerabilities that must be fixed first. The Sybil attack v
 
 **Tasks:**
 
-- [ ] **Add IP-based rate limiting** as secondary layer (max 10 taps/hour per IP) — prevents Sybil attack where attacker generates new wallet per request
-- [ ] **Add daily hot wallet spend cap** — hard limit on total sats dispensed per day
-- [ ] **Add Bearer token auth to admin endpoints** (`/admin/*`) — currently zero authentication
-- [ ] **Add venue whitelist** — validate venueId against `ALLOWED_VENUES` env var
-- [ ] **Disable `/simulate-tap` in production** via env flag — currently an open faucet
-- [ ] **Fix `tapTracker.getUserStats()`** — uses hardcoded 100 instead of actual 330 sats
-- [ ] **Align `DEFAULT_REWARD_SATS`** to 330 across server config
-- [ ] **Deploy `.well-known` files to cozzyland.net** (needed for Phase 2 deep links):
+- [x] **Add IP-based rate limiting** as secondary layer (max 10 taps/hour per IP) — prevents Sybil attack where attacker generates new wallet per request
+- [x] **Add daily hot wallet spend cap** — hard limit on total sats dispensed per day
+- [x] **Add Bearer token auth to admin endpoints** (`/admin/*`) — currently zero authentication
+- [x] **Add venue whitelist** — validate venueId against `ALLOWED_VENUES` env var
+- [x] **Disable `/simulate-tap` in production** via env flag — currently an open faucet
+- [x] **Fix `tapTracker.getUserStats()`** — uses hardcoded 100 instead of actual 330 sats
+- [x] **Align `DEFAULT_REWARD_SATS`** to 330 across server config
+- [x] **Deploy `.well-known` files to cozzyland.net** (needed for Phase 2 deep links):
 
 AASA for iOS (`/.well-known/apple-app-site-association`):
 ```json
@@ -87,16 +133,16 @@ assetlinks.json for Android (`/.well-known/assetlinks.json`):
 }]
 ```
 
-- [ ] **Add fallback web page** at `cozzyland.net/tap` — redirect to App Store / Play Store or existing PWA
+- [x] **Add fallback web page** at `cozzyland.net/tap` — redirect to App Store / Play Store or existing PWA
 
 **AASA gotcha:** Apple caches aggressively. Must be correct **before** first TestFlight build. Serve with `Content-Type: application/json`. Test with `curl -v https://cozzyland.net/.well-known/apple-app-site-association`.
 
 **Success criteria:**
-- [ ] Server rejects unknown venue IDs
-- [ ] Admin endpoints require authentication
-- [ ] `/simulate-tap` disabled in production
-- [ ] IP-based rate limiting active
-- [ ] `.well-known` files serving correctly
+- [x] Server rejects unknown venue IDs
+- [x] Admin endpoints require authentication
+- [x] `/simulate-tap` disabled in production
+- [x] IP-based rate limiting active
+- [x] `.well-known` files serving correctly
 
 ---
 
@@ -106,16 +152,16 @@ assetlinks.json for Android (`/.well-known/assetlinks.json`):
 
 **Tasks — Project Setup:**
 
-- [ ] Create new GitHub repo `jukesats-app`
-- [ ] Initialize: `npx create-expo-app jukesats-app --template blank-typescript`
-- [ ] Install dependencies:
+- [x] Create new GitHub repo `jukesats-app`
+- [x] Initialize: `npx create-expo-app jukesats-app --template blank-typescript`
+- [x] Install dependencies:
 
 ```bash
 npx expo install expo-crypto expo-secure-store expo-linking expo-splash-screen @react-native-async-storage/async-storage
 npm install @arkade-os/sdk
 ```
 
-- [ ] Create `src/polyfills.ts` (MUST be imported first, before any SDK imports):
+- [x] Create `src/polyfills.ts` (MUST be imported first, before any SDK imports):
 
 ```typescript
 // src/polyfills.ts
@@ -127,7 +173,7 @@ if (!global.crypto) {
 global.crypto.getRandomValues = Crypto.getRandomValues
 ```
 
-- [ ] Configure `metro.config.js`:
+- [x] Configure `metro.config.js`:
 
 ```js
 const { getDefaultConfig } = require('expo/metro-config')
@@ -141,7 +187,7 @@ config.resolver.unstable_enablePackageExports = true
 module.exports = config
 ```
 
-- [ ] Configure deep links in `app.json`:
+- [x] Configure deep links in `app.json`:
 
 ```json
 {
@@ -167,7 +213,7 @@ module.exports = config
 }
 ```
 
-- [ ] Run `npx expo prebuild` to generate native projects
+- [ ] Run `npx expo prebuild` to generate native projects (deferred — EAS Build handles this)
 
 **Tasks — Wallet Service (`src/wallet.ts`):**
 
@@ -214,7 +260,8 @@ async function doInit(): Promise<string> {
     indexerProvider: new ExpoIndexerProvider(ARK_SERVER_URL),
   })
 
-  address = wallet.address
+  // NOTE: wallet.address does NOT exist. Must use getAddress() which is async.
+  address = await wallet.getAddress()
   await AsyncStorage.setItem(CACHED_ADDRESS_KEY, address)
   return address
 }
@@ -232,142 +279,19 @@ export function getAddress(): string | null {
 **Key design decisions in wallet service:**
 - **Deduplication promise** — concurrent `initWallet()` calls share one promise, preventing double key generation on first launch
 - **Cached address** — stored in AsyncStorage after init for fast cold starts (~10ms read vs ~100ms SecureStore)
-- **`identity.toAddress()` is synchronous** — no network needed to derive address from private key
-- **Only 3 exported functions** — `initWallet()`, `getWallet()`, `getAddress()`. Add more when UI needs them.
+- **⚠️ `identity.toAddress()` does NOT exist** — address derivation requires `wallet.getAddress()` (async, needs ARK server pubkey). First-time users must complete `initWallet()` before tapping. Returning users use `getCachedAddress()` for parallel tap optimization.
+- **4 exported functions** — `initWallet()`, `getWallet()`, `getAddress()`, `getCachedAddress()`. The actual `src/wallet.ts` is the source of truth.
 
-**Tasks — App Entry (`app/_layout.tsx`):**
+**Tasks — App Entry (`App.tsx`):**
 
-```typescript
-import './src/polyfills' // MUST be first
-import { useState, useEffect } from 'react'
-import * as SplashScreen from 'expo-splash-screen'
-import * as Linking from 'expo-linking'
-import { useLinkingURL } from 'expo-linking'
-import AsyncStorage from '@react-native-async-storage/async-storage'
-import * as SecureStore from 'expo-secure-store'
-import { SingleKey } from '@arkade-os/sdk'
-import { initWallet, getAddress } from './src/wallet'
-
-const PRIVATE_KEY_KEY = 'wallet-private-key'
-const CACHED_ADDRESS_KEY = 'wallet-ark-address'
-const API_URL = 'https://jukesats-server.fly.dev'
-
-SplashScreen.preventAutoHideAsync()
-
-type AppState =
-  | { kind: 'loading' }
-  | { kind: 'ready'; balance: number; address: string }
-  | { kind: 'tapSuccess'; balance: number; address: string; reward: number }
-  | { kind: 'rateLimited'; retryAfterSeconds: number }
-  | { kind: 'error'; message: string }
-
-export default function App() {
-  const [state, setState] = useState<AppState>({ kind: 'loading' })
-  const url = useLinkingURL()
-
-  // Cold start
-  useEffect(() => { coldStart() }, [])
-
-  // Warm deep links (app already open)
-  useEffect(() => {
-    if (!url || state.kind === 'loading') return
-    const tap = parseDeepLink(url)
-    if (tap) handleTap(tap.venueId, tap.tagId)
-  }, [url])
-
-  async function coldStart() {
-    try {
-      const initialUrl = await Linking.getInitialURL()
-      const tapParams = parseDeepLink(initialUrl)
-
-      // Get or derive address (fast path: ~10ms from cache)
-      let addr = await AsyncStorage.getItem(CACHED_ADDRESS_KEY)
-      if (!addr) {
-        let pkHex = await SecureStore.getItemAsync(PRIVATE_KEY_KEY)
-        if (!pkHex) {
-          const id = SingleKey.fromRandomBytes()
-          pkHex = id.toHex()
-          await SecureStore.setItemAsync(PRIVATE_KEY_KEY, pkHex)
-          addr = id.toAddress()
-        } else {
-          addr = SingleKey.fromHex(pkHex).toAddress()
-        }
-        await AsyncStorage.setItem(CACHED_ADDRESS_KEY, addr)
-      }
-
-      if (tapParams) {
-        // FAST PATH: tap + wallet init in parallel. Tap is critical path.
-        const tapPromise = submitTap(addr, tapParams.venueId, tapParams.tagId)
-        const walletPromise = initWallet()
-
-        const tapResult = await tapPromise
-        // Wallet init is best-effort — don't lose tap result if it fails
-        try { await walletPromise } catch (e) { console.warn('Wallet init failed, will retry:', e) }
-
-        setState({ kind: 'tapSuccess', balance: 0, address: addr, reward: 330 })
-      } else {
-        await initWallet()
-        setState({ kind: 'ready', balance: 0, address: addr })
-      }
-    } catch (error) {
-      setState({ kind: 'error', message: error instanceof Error ? error.message : 'Startup failed' })
-    } finally {
-      SplashScreen.hideAsync()
-    }
-  }
-
-  async function handleTap(venueId: string, tagId: string) {
-    const addr = getAddress()
-    if (!addr) return
-    try {
-      await submitTap(addr, venueId, tagId)
-      setState({ kind: 'tapSuccess', balance: 0, address: addr, reward: 330 })
-    } catch (error) {
-      if (error instanceof Error && 'rateLimitSeconds' in error) {
-        setState({ kind: 'rateLimited', retryAfterSeconds: (error as any).rateLimitSeconds })
-      } else {
-        setState({ kind: 'error', message: error instanceof Error ? error.message : 'Tap failed' })
-      }
-    }
-  }
-
-  // ... render based on state.kind
-}
-
-// --- Helpers ---
-
-interface TapResult { success: true; txid: string } | { success: false; message: string; rateLimitSeconds?: number }
-
-async function submitTap(userArkAddress: string, venueId: string, nfcTagId: string): Promise<TapResult> {
-  const res = await fetch(`${API_URL}/tap`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ userArkAddress, venueId, nfcTagId }),
-  })
-
-  if (res.status === 429) {
-    const body = await res.json().catch(() => ({}))
-    return { success: false, message: 'Rate limited', rateLimitSeconds: body.remainingSeconds ?? 60 }
-  }
-  if (!res.ok) {
-    return { success: false, message: `Tap failed: ${res.status}` }
-  }
-  return res.json()
-}
-
-function parseDeepLink(url: string | null): { venueId: string; tagId: string } | null {
-  if (!url) return null
-  try {
-    const parsed = new URL(url)
-    if (parsed.pathname !== '/tap') return null
-    const venueId = parsed.searchParams.get('venue')
-    if (!venueId) return null
-    return { venueId, tagId: parsed.searchParams.get('tag') || 'unknown' }
-  } catch {
-    return null
-  }
-}
-```
+> **⚠️ The code below is the ORIGINAL PLAN and contains bugs.** The actual implementation is in `App.tsx` (source of truth). Key differences:
+> - `SingleKey.toAddress()` doesn't exist — replaced with `getCachedAddress()` + `initWallet()`
+> - `useLinkingURL()` replaced with `Linking.addEventListener('url', ...)` for warm links
+> - `submitTap` returns a result object (not throw-based), properly handles `retryAfterMs`
+> - `handleTapResult()` extracted as shared helper for cold start and warm tap paths
+> - Full UI with styles, animations, and all 5 state overlays is in `App.tsx`
+>
+> **Read `App.tsx` directly — don't copy from this plan.**
 
 **Bugs fixed from review:**
 - `initWallet()` uses deduplication promise — concurrent calls cannot create two private keys
@@ -400,12 +324,12 @@ function parseDeepLink(url: string | null): { venueId: string; tagId: string } |
 
 **Tasks — UI:**
 
-- [ ] Build single-screen layout with balance display
-- [ ] Add tap reward overlay animation ("+330 sats earned!")
-- [ ] Add loading state during wallet initialization
-- [ ] Add error overlays: network down, ARK coordinator unreachable
-- [ ] Show wallet ARK address
-- [ ] Handle balance refresh after tap (2s delay for ARK indexer lag)
+- [x] Build single-screen layout with balance display
+- [x] Add tap reward overlay animation ("+330 sats earned!")
+- [x] Add loading state during wallet initialization
+- [x] Add error overlays: network down, ARK coordinator unreachable
+- [x] Show wallet ARK address
+- [x] Handle balance refresh after tap (tap on balance to refresh)
 
 **UI States (single screen, overlays):**
 
@@ -419,7 +343,7 @@ function parseDeepLink(url: string | null): { venueId: string; tagId: string } |
 
 **Tasks — Build:**
 
-- [ ] Set up EAS Build (`eas.json`):
+- [x] Set up EAS Build (`eas.json`):
   ```json
   {
     "build": {
@@ -464,22 +388,22 @@ function parseDeepLink(url: string | null): { venueId: string; tagId: string } |
 |------------|--------|----------|
 | Apple Developer Organization account | Need DUNS number | Blocks TestFlight |
 | `expo-crypto` polyfill | ✅ Verified | — |
-| `@arkade-os/sdk` Expo adapters | ✅ Verified (v0.3.12, Expo 52) | — |
-| `.well-known` files on cozzyland.net | Phase 1 task | Blocks deep links |
+| `@arkade-os/sdk` Expo adapters | ✅ Verified (v0.3.12, Expo 54) | — |
+| `.well-known` files on cozzyland.net | ✅ Done (served from server) | — |
 | Physical NFC tags (NTAG213) | Need to purchase | Blocks Phase 2 testing |
 | AASA correct before first TestFlight | Phase 1 task | Blocks iOS deep links |
 
 ## Acceptance Criteria
 
-- [ ] NFC tag tap awards sats on both iOS and Android
-- [ ] First-time users get wallet created automatically
-- [ ] Balance updates after each tap
-- [ ] Rate limiting works (1 tap/min/venue per user + IP-based)
-- [ ] Cold start, warm start, and already-open deep links all work
-- [ ] Admin endpoints require authentication
-- [ ] Daily hot wallet spend cap active
-- [ ] Cold start to reward < 5s (stretch: < 3s)
-- [ ] Private keys in hardware-backed secure storage
+- [ ] NFC tag tap awards sats on both iOS and Android (needs device testing)
+- [x] First-time users get wallet created automatically (code complete)
+- [x] Balance updates after each tap (code complete — tap balance to refresh)
+- [x] Rate limiting works (1 tap/min/venue per user + IP-based) (server code complete)
+- [x] Cold start, warm start, and already-open deep links all work (code complete)
+- [x] Admin endpoints require authentication
+- [x] Daily hot wallet spend cap active
+- [ ] Cold start to reward < 5s (stretch: < 3s) (needs device measurement)
+- [x] Private keys in hardware-backed secure storage (`expo-secure-store`)
 - [ ] Tested on physical iPhone (XR+) and Android with real NFC tag
 
 ## References
