@@ -1,0 +1,38 @@
+app = 'jukesats-server'
+primary_region = 'lhr'
+
+[build]
+
+[env]
+  PORT = "3001"
+  ARK_SERVER_URL = "https://arkade.computer"
+  DEFAULT_REWARD_SATS = "330"
+  TAP_COOLDOWN_MS = "60000"
+  WALLET_STORAGE_PATH = "/data/hot-wallet"
+  DAILY_SPEND_CAP_SATS = "100000"
+  IP_RATE_LIMIT_MAX = "10"
+  ENABLE_SIMULATE_TAP = "false"
+
+[http_service]
+  internal_port = 3001
+  force_https = true
+  auto_stop_machines = 'stop'
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ['app']
+
+[[http_service.checks]]
+  grace_period = "10s"
+  interval = "30s"
+  method = "GET"
+  timeout = "5s"
+  path = "/health"
+
+[mounts]
+  source = "jukesats_data"
+  destination = "/data"
+
+[[vm]]
+  memory = '256mb'
+  cpu_kind = 'shared'
+  cpus = 1

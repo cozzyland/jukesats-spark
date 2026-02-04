@@ -1,0 +1,12 @@
+{
+  "applinks": {
+    "details": [
+      {
+        "appIDs": ["TEAMID.com.jukesats.app"],
+        "components": [
+          { "/": "/tap*" }
+        ]
+      }
+    ]
+  }
+}
