@@ -1,8 +1,10 @@
 import 'dotenv/config'
 import express from 'express'
 import cors from 'cors'
+import helmet from 'helmet'
 import path from 'path'
 import { fileURLToPath } from 'url'
+import { timingSafeEqual } from 'crypto'
 import { hotWallet } from './hotWallet.js'
 import { TapTracker } from './tapTracker.js'
 import { createDb } from './db.js'
@@ -12,10 +14,12 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 export const app = express()
 export const PORT = process.env.PORT || 3001
 
-app.use(cors())
-app.use(express.json())
-// Trust proxy for IP extraction behind Fly.io
-app.set('trust proxy', true)
+const CORS_ORIGIN = (process.env.CORS_ORIGIN || 'https://cozzyland.net').split(',').map(s => s.trim())
+app.use(helmet())
+app.use(cors({ origin: CORS_ORIGIN, methods: ['GET', 'POST'] }))
+app.use(express.json({ limit: '16kb' }))
+// Trust only Fly.io edge proxy (1 hop)
+app.set('trust proxy', 1)
 
 // Serve .well-known files with correct content types
 app.use('/.well-known', express.static(path.join(__dirname, '../public/.well-known'), {
@@ -68,7 +72,14 @@ function requireAdmin(req: express.Request, res: express.Response, next: express
   }
 
   const auth = req.headers.authorization
-  if (!auth || auth !== `Bearer ${ADMIN_TOKEN}`) {
+  if (!auth || !auth.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Unauthorized' })
+  }
+
+  const provided = Buffer.from(auth.slice(7))
+  const expected = Buffer.from(ADMIN_TOKEN)
+
+  if (provided.length !== expected.length || !timingSafeEqual(provided, expected)) {
     return res.status(401).json({ error: 'Unauthorized' })
   }
 
@@ -85,22 +96,8 @@ function getClientIp(req: express.Request): string {
 /**
  * Health check
  */
-app.get('/health', async (req, res) => {
-  try {
-    const balanceStatus = await hotWallet.getBalanceStatus()
-    res.json({
-      status: balanceStatus.status === 'critical' ? 'degraded' : 'ok',
-      balance: {
-        available: balanceStatus.available,
-        settled: balanceStatus.settled,
-        preconfirmed: balanceStatus.preconfirmed,
-        status: balanceStatus.status
-      },
-      warning: balanceStatus.warning
-    })
-  } catch (error) {
-    res.status(500).json({ status: 'error', message: 'Hot wallet not ready' })
-  }
+app.get('/health', (_req, res) => {
+  res.json({ status: 'ok' })
 })
 
 /**
@@ -299,17 +296,14 @@ app.post('/tap', async (req, res) => {
     res.json(result)
   } catch (error) {
     console.error('[Tap] Error:', error)
-    res.status(500).json({
-      error: 'Failed to process tap',
-      message: error instanceof Error ? error.message : 'Unknown error'
-    })
+    res.status(500).json({ error: 'Failed to process tap' })
   }
 })
 
 /**
  * Get tap stats for a user
  */
-app.get('/stats/:userArkAddress', (req, res) => {
+app.get('/stats/:userArkAddress', requireAdmin, (req, res) => {
   const { userArkAddress } = req.params
   const stats = tapTracker.getUserStats(userArkAddress, DEFAULT_REWARD_SATS)
   res.json(stats)
@@ -343,10 +337,7 @@ app.post('/simulate-tap', async (req, res) => {
     res.json(result)
   } catch (error) {
     console.error('[Simulate Tap] Error:', error)
-    res.status(500).json({
-      error: 'Failed to process tap',
-      message: error instanceof Error ? error.message : 'Unknown error'
-    })
+    res.status(500).json({ error: 'Failed to process tap' })
   }
 })
 
@@ -373,9 +364,24 @@ export async function start() {
       }
     }, 60 * 60 * 1000) // Check every hour
 
-    app.listen(PORT, () => {
+    const server = app.listen(PORT, () => {
       console.log(`[Server] Listening on port ${PORT}`)
     })
+
+    const shutdown = (signal: string) => {
+      console.log(`[Server] ${signal} received, shutting down...`)
+      server.close(() => {
+        db.close()
+        console.log('[Server] Shutdown complete')
+        process.exit(0)
+      })
+      setTimeout(() => {
+        console.error('[Server] Forced shutdown after timeout')
+        process.exit(1)
+      }, 10_000)
+    }
+    process.on('SIGTERM', () => shutdown('SIGTERM'))
+    process.on('SIGINT', () => shutdown('SIGINT'))
 
   } catch (error) {
     console.error('[Server] Failed to start:', error)

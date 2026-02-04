@@ -1,5 +1,8 @@
 FROM node:22-slim
 
+# Install gosu for privilege de-escalation
+RUN apt-get update && apt-get install -y --no-install-recommends gosu && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
 # Copy package files
@@ -19,11 +22,15 @@ RUN npm run build
 # Remove dev dependencies for smaller image
 RUN npm prune --production
 
-# Create data directory for wallet storage
-RUN mkdir -p ./data/hot-wallet
+# Create data directory for wallet and database storage
+RUN mkdir -p /data/hot-wallet && chown -R node:node /data
+
+# Copy entrypoint
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
 
 # Expose port
 EXPOSE 3001
 
-# Run the server (bootstrap.js applies polyfills then loads main.js)
+ENTRYPOINT ["/entrypoint.sh"]
 CMD ["node", "dist/bootstrap.js"]

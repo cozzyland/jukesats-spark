@@ -40,10 +40,13 @@ const { hotWallet } = await import('../hotWallet.js') as { hotWallet: Record<str
 
 describe('Server endpoints', () => {
   describe('GET /health', () => {
-    it('returns 200 with status ok', async () => {
+    it('returns 200 with only status ok', async () => {
       const res = await request(app).get('/health')
       expect(res.status).toBe(200)
-      expect(res.body.status).toBe('ok')
+      expect(res.body).toEqual({ status: 'ok' })
+      // Must NOT leak balance info
+      expect(res.body.balance).toBeUndefined()
+      expect(res.body.warning).toBeUndefined()
     })
   })
 
@@ -119,6 +122,36 @@ describe('Server endpoints', () => {
         .post('/simulate-tap')
         .send({ userArkAddress: 'tark1user1' })
       expect(res.status).toBe(404)
+    })
+  })
+
+  describe('GET /stats', () => {
+    it('returns 401 without auth', async () => {
+      const res = await request(app).get('/stats/tark1someuser')
+      expect(res.status).toBe(401)
+    })
+
+    it('returns stats with auth', async () => {
+      const res = await request(app)
+        .get('/stats/tark1someuser')
+        .set('Authorization', 'Bearer test-admin-token')
+      expect(res.status).toBe(200)
+      expect(res.body.totalTaps).toBeDefined()
+    })
+  })
+
+  describe('Error responses', () => {
+    it('does not leak error message on tap failure', async () => {
+      const address = 'tark1errtest' + Date.now()
+      hotWallet.sendReward.mockRejectedValueOnce(new Error('Secret internal error details'))
+
+      const res = await request(app)
+        .post('/tap')
+        .send({ userArkAddress: address, venueId: 'venue-1', nfcTagId: 'tag-1' })
+
+      expect(res.status).toBe(500)
+      expect(res.body.error).toBe('Failed to process tap')
+      expect(res.body.message).toBeUndefined()
     })
   })
 
