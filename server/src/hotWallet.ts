@@ -101,6 +101,8 @@ export class HotWallet {
 
     console.log('[HotWallet] Listening for incoming funds...')
 
+    let backoffMs = 1000
+
     while (true) {
       try {
         const incoming = await waitForIncomingFunds(this.wallet)
@@ -125,9 +127,13 @@ export class HotWallet {
           console.log(`[HotWallet] Refreshed balance: ${refreshedBalance.available} sats available`)
         }, 5000)
 
+        // Reset backoff on success
+        backoffMs = 1000
+
       } catch (error) {
         console.error('[HotWallet] Error listening for funds:', error)
-        await new Promise(resolve => setTimeout(resolve, 5000))
+        await new Promise(resolve => setTimeout(resolve, backoffMs))
+        backoffMs = Math.min(backoffMs * 2, 60_000)
       }
     }
   }
@@ -239,11 +245,6 @@ export class HotWallet {
       })
 
       console.log(`[HotWallet] Sent! TX: ${txid}`)
-
-      // Check balance after send
-      const newBalance = await this.wallet.getBalance()
-      console.log(`[HotWallet] New balance: ${newBalance.available} sats available`)
-      this.checkBalanceAndWarn(BigInt(newBalance.available))
 
       return txid
     } catch (error) {
