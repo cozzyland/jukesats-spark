@@ -8,5 +8,6 @@ import { EventSource } from 'eventsource'
 
 console.log('[Bootstrap] EventSource polyfill applied')
 
-// Now dynamically import the main app
-import('./main.js')
+// Now dynamically import the main app and start the server
+const { start } = await import('./main.js')
+await start()

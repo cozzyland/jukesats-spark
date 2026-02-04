@@ -8,8 +8,8 @@ import { TapTracker } from './tapTracker.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
-const app = express()
-const PORT = process.env.PORT || 3001
+export const app = express()
+export const PORT = process.env.PORT || 3001
 
 app.use(cors())
 app.use(express.json())
@@ -31,16 +31,16 @@ app.get('/tap', (req, res) => {
 })
 
 // In-memory tap tracker (use Redis/DB in production)
-const tapTracker = new TapTracker()
+export const tapTracker = new TapTracker()
 
 // Config
-const DEFAULT_REWARD_SATS = parseInt(process.env.DEFAULT_REWARD_SATS || '330', 10)
-const TAP_COOLDOWN_MS = parseInt(process.env.TAP_COOLDOWN_MS || '60000', 10)
-const ADMIN_TOKEN = process.env.ADMIN_TOKEN || ''
-const ALLOWED_VENUES = (process.env.ALLOWED_VENUES || '').split(',').map((v: string) => v.trim()).filter(Boolean)
-const DAILY_SPEND_CAP_SATS = parseInt(process.env.DAILY_SPEND_CAP_SATS || '100000', 10)
-const IP_RATE_LIMIT_MAX = parseInt(process.env.IP_RATE_LIMIT_MAX || '10', 10)
-const ENABLE_SIMULATE_TAP = process.env.ENABLE_SIMULATE_TAP === 'true'
+export const DEFAULT_REWARD_SATS = parseInt(process.env.DEFAULT_REWARD_SATS || '330', 10)
+export const TAP_COOLDOWN_MS = parseInt(process.env.TAP_COOLDOWN_MS || '60000', 10)
+export const ADMIN_TOKEN = process.env.ADMIN_TOKEN || ''
+export const ALLOWED_VENUES = (process.env.ALLOWED_VENUES || '').split(',').map((v: string) => v.trim()).filter(Boolean)
+export const DAILY_SPEND_CAP_SATS = parseInt(process.env.DAILY_SPEND_CAP_SATS || '100000', 10)
+export const IP_RATE_LIMIT_MAX = parseInt(process.env.IP_RATE_LIMIT_MAX || '10', 10)
+export const ENABLE_SIMULATE_TAP = process.env.ENABLE_SIMULATE_TAP === 'true'
 
 /**
  * Admin auth middleware
@@ -172,7 +172,7 @@ app.post('/admin/recover', requireAdmin, async (req, res) => {
 /**
  * Core tap processing logic
  */
-async function processTap(userArkAddress: string, venueId: string, nfcTagId: string, ip: string) {
+export async function processTap(userArkAddress: string, venueId: string, nfcTagId: string, ip: string) {
   // Check venue whitelist
   if (ALLOWED_VENUES.length > 0 && !ALLOWED_VENUES.includes(venueId)) {
     return {
@@ -307,7 +307,7 @@ app.post('/simulate-tap', async (req, res) => {
 })
 
 // Initialize and start
-async function start() {
+export async function start() {
   console.log('[Server] Starting Jukesats reward server...')
   console.log(`[Server] Reward: ${DEFAULT_REWARD_SATS} sats/tap`)
   console.log(`[Server] Venues: ${ALLOWED_VENUES.length > 0 ? ALLOWED_VENUES.join(', ') : 'ALL (no whitelist)'}`)
@@ -338,5 +338,3 @@ async function start() {
     process.exit(1)
   }
 }
-
-start()
