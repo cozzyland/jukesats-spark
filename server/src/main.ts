@@ -103,11 +103,11 @@ app.get('/health', (_req, res) => {
 /**
  * Get hot wallet address (for funding)
  */
-app.get('/admin/address', requireAdmin, async (req, res) => {
+app.get('/admin/address', requireAdmin, async (_req, res) => {
   try {
     const address = await hotWallet.getAddress()
     res.json({ address })
-  } catch (error) {
+  } catch (_error) {
     res.status(500).json({ error: 'Failed to get address' })
   }
 })
@@ -115,7 +115,7 @@ app.get('/admin/address', requireAdmin, async (req, res) => {
 /**
  * Get detailed hot wallet balance status
  */
-app.get('/admin/balance', requireAdmin, async (req, res) => {
+app.get('/admin/balance', requireAdmin, async (_req, res) => {
   try {
     const balanceStatus = await hotWallet.getBalanceStatus()
     const address = await hotWallet.getAddress()
@@ -128,7 +128,7 @@ app.get('/admin/balance', requireAdmin, async (req, res) => {
         ? `Send ARK sats to ${address} or swap Lightning via Boltz Exchange`
         : null
     })
-  } catch (error) {
+  } catch (_error) {
     res.status(500).json({ error: 'Failed to get balance' })
   }
 })

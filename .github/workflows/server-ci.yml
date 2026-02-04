@@ -1,0 +1,29 @@
+name: Server CI
+
+on:
+  push:
+    branches: [main]
+    paths: ['server/**']
+  pull_request:
+    branches: [main]
+    paths: ['server/**']
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build
+      - run: npm test
