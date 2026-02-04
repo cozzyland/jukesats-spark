@@ -12,6 +12,10 @@ interface UserStats {
  */
 export class TapTracker {
   private stmtInsert
+  private stmtBeginTap
+  private stmtCompleteTap
+  private stmtFailTap
+  private stmtFindByIdempotencyKey
   private stmtLastTapAtVenue
   private stmtIpTapsLastHour
   private stmtTodaySpend
@@ -26,20 +30,37 @@ export class TapTracker {
       VALUES (?, ?, ?, ?, ?, ?)
     `)
 
+    this.stmtBeginTap = db.prepare(`
+      INSERT INTO taps (user_ark_address, venue_id, nfc_tag_id, reward_sats, ip, status, idempotency_key, created_at)
+      VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)
+    `)
+
+    this.stmtCompleteTap = db.prepare(`
+      UPDATE taps SET status = 'completed', txid = ? WHERE id = ?
+    `)
+
+    this.stmtFailTap = db.prepare(`
+      UPDATE taps SET status = 'failed' WHERE id = ?
+    `)
+
+    this.stmtFindByIdempotencyKey = db.prepare(`
+      SELECT id, txid, reward_sats, status FROM taps WHERE idempotency_key = ?
+    `)
+
     this.stmtLastTapAtVenue = db.prepare(`
       SELECT created_at FROM taps
-      WHERE user_ark_address = ? AND venue_id = ?
+      WHERE user_ark_address = ? AND venue_id = ? AND status != 'failed'
       ORDER BY created_at DESC LIMIT 1
     `)
 
     this.stmtIpTapsLastHour = db.prepare(`
       SELECT COUNT(*) as count, MIN(created_at) as oldest
-      FROM taps WHERE ip = ? AND created_at > ?
+      FROM taps WHERE ip = ? AND created_at > ? AND status != 'failed'
     `)
 
     this.stmtTodaySpend = db.prepare(`
       SELECT COALESCE(SUM(reward_sats), 0) as total
-      FROM taps WHERE created_at >= ?
+      FROM taps WHERE created_at >= ? AND status != 'failed'
     `)
 
     this.stmtUserStats = db.prepare(`
@@ -102,10 +123,39 @@ export class TapTracker {
   }
 
   /**
-   * Record a successful tap
+   * Record a successful tap (legacy — use beginTap/completeTap for new code)
    */
   recordTap(userArkAddress: string, venueId: string, nfcTagId: string, rewardSats: number, ip: string): void {
     this.stmtInsert.run(userArkAddress, venueId, nfcTagId, rewardSats, ip, Date.now())
+  }
+
+  /**
+   * Begin a tap (INSERT with status='pending'), return tap id
+   */
+  beginTap(userArkAddress: string, venueId: string, nfcTagId: string, rewardSats: number, ip: string, idempotencyKey?: string): number {
+    const result = this.stmtBeginTap.run(userArkAddress, venueId, nfcTagId, rewardSats, ip, idempotencyKey || null, Date.now())
+    return Number(result.lastInsertRowid)
+  }
+
+  /**
+   * Mark a pending tap as completed with txid
+   */
+  completeTap(tapId: number, txid: string): void {
+    this.stmtCompleteTap.run(txid, tapId)
+  }
+
+  /**
+   * Mark a pending tap as failed
+   */
+  failTap(tapId: number): void {
+    this.stmtFailTap.run(tapId)
+  }
+
+  /**
+   * Find a tap by idempotency key (for deduplication)
+   */
+  findByIdempotencyKey(key: string): { id: number; txid: string | null; reward_sats: number; status: string } | undefined {
+    return this.stmtFindByIdempotencyKey.get(key) as { id: number; txid: string | null; reward_sats: number; status: string } | undefined
   }
 
   /**

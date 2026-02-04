@@ -36,6 +36,7 @@ process.env.ENABLE_SIMULATE_TAP = 'false'
 
 // Import after mocks and env are set
 const { app } = await import('../main.js')
+const { hotWallet } = await import('../hotWallet.js') as { hotWallet: Record<string, ReturnType<typeof vi.fn>> }
 
 describe('Server endpoints', () => {
   describe('GET /health', () => {
@@ -118,6 +119,42 @@ describe('Server endpoints', () => {
         .post('/simulate-tap')
         .send({ userArkAddress: 'tark1user1' })
       expect(res.status).toBe(404)
+    })
+  })
+
+  describe('Concurrency', () => {
+    it('serializes concurrent taps for same user/venue — one 200, one 429', async () => {
+      // Use unique addresses to avoid interference from previous tests
+      const address = 'tark1concurrent' + Date.now()
+
+      // Fire two taps concurrently
+      const [res1, res2] = await Promise.all([
+        request(app).post('/tap').send({ userArkAddress: address, venueId: 'venue-1', nfcTagId: 'tag-1' }),
+        request(app).post('/tap').send({ userArkAddress: address, venueId: 'venue-1', nfcTagId: 'tag-1' })
+      ])
+
+      const statuses = [res1.status, res2.status].sort()
+      expect(statuses).toEqual([200, 429])
+    })
+
+    it('records failed send with status=failed', async () => {
+      const address = 'tark1failtest' + Date.now()
+      hotWallet.sendReward.mockRejectedValueOnce(new Error('Network error'))
+
+      const res = await request(app)
+        .post('/tap')
+        .send({ userArkAddress: address, venueId: 'venue-1', nfcTagId: 'tag-1' })
+
+      expect(res.status).toBe(500)
+
+      // After a failed tap, user should be able to retry (failed taps don't count for rate limiting)
+      hotWallet.sendReward.mockResolvedValueOnce('retrytxid123')
+      const retry = await request(app)
+        .post('/tap')
+        .send({ userArkAddress: address, venueId: 'venue-1', nfcTagId: 'tag-1' })
+
+      expect(retry.status).toBe(200)
+      expect(retry.body.success).toBe(true)
     })
   })
 })

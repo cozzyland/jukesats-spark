@@ -35,6 +35,20 @@ app.get('/tap', (req, res) => {
 const db = createDb()
 export const tapTracker = new TapTracker(db)
 
+// Mutex for serializing tap processing
+class Mutex {
+  private _lock: Promise<void> = Promise.resolve()
+  async acquire(): Promise<() => void> {
+    let release: () => void
+    const next = new Promise<void>(r => { release = r })
+    const prev = this._lock
+    this._lock = next
+    await prev
+    return release!
+  }
+}
+const tapMutex = new Mutex()
+
 // Config
 export const DEFAULT_REWARD_SATS = parseInt(process.env.DEFAULT_REWARD_SATS || '330', 10)
 export const TAP_COOLDOWN_MS = parseInt(process.env.TAP_COOLDOWN_MS || '60000', 10)
@@ -172,65 +186,91 @@ app.post('/admin/recover', requireAdmin, async (req, res) => {
 })
 
 /**
- * Core tap processing logic
+ * Core tap processing logic with mutex for concurrency control
  */
-export async function processTap(userArkAddress: string, venueId: string, nfcTagId: string, ip: string) {
-  // Check venue whitelist
-  if (ALLOWED_VENUES.length > 0 && !ALLOWED_VENUES.includes(venueId)) {
-    return {
-      success: false,
-      status: 400,
-      error: 'Unknown venue'
-    }
-  }
-
-  // Check IP rate limit (Sybil defense)
-  const ipCheck = tapTracker.canTapFromIp(ip, IP_RATE_LIMIT_MAX)
-  if (!ipCheck.allowed) {
-    return {
-      success: false,
-      status: 429,
-      error: 'Too many taps from this network',
-      retryAfterMs: ipCheck.retryAfterMs
-    }
-  }
-
-  // Check per-address rate limiting
-  const canTap = tapTracker.canTap(userArkAddress, venueId, TAP_COOLDOWN_MS)
-  if (!canTap.allowed) {
-    return {
-      success: false,
-      status: 429,
-      error: 'Too many taps',
-      retryAfterMs: canTap.retryAfterMs
-    }
-  }
-
-  // Check daily spend cap
-  if (DAILY_SPEND_CAP_SATS > 0) {
-    const todaySpend = tapTracker.getTodaySpend()
-    if (todaySpend + DEFAULT_REWARD_SATS > DAILY_SPEND_CAP_SATS) {
-      console.warn(`[Tap] Daily spend cap reached: ${todaySpend}/${DAILY_SPEND_CAP_SATS} sats`)
+export async function processTap(userArkAddress: string, venueId: string, nfcTagId: string, ip: string, idempotencyKey?: string) {
+  // Check idempotency key before acquiring mutex
+  if (idempotencyKey) {
+    const existing = tapTracker.findByIdempotencyKey(idempotencyKey)
+    if (existing && existing.status === 'completed') {
       return {
-        success: false,
-        status: 503,
-        error: 'Daily reward limit reached. Try again tomorrow.'
+        success: true,
+        txid: existing.txid,
+        amount: existing.reward_sats,
+        message: `You earned ${existing.reward_sats} sats!`
       }
     }
   }
 
-  // Send the reward
+  // Acquire mutex for rate-limit checks + INSERT pending
+  const release = await tapMutex.acquire()
+  let tapId: number
   const rewardSats = DEFAULT_REWARD_SATS
-  const txid = await hotWallet.sendReward(userArkAddress, rewardSats)
 
-  // Record the tap
-  tapTracker.recordTap(userArkAddress, venueId, nfcTagId, rewardSats, ip)
+  try {
+    // Check venue whitelist
+    if (ALLOWED_VENUES.length > 0 && !ALLOWED_VENUES.includes(venueId)) {
+      return {
+        success: false,
+        status: 400,
+        error: 'Unknown venue'
+      }
+    }
 
-  return {
-    success: true,
-    txid,
-    amount: rewardSats,
-    message: `You earned ${rewardSats} sats!`
+    // Check IP rate limit (Sybil defense)
+    const ipCheck = tapTracker.canTapFromIp(ip, IP_RATE_LIMIT_MAX)
+    if (!ipCheck.allowed) {
+      return {
+        success: false,
+        status: 429,
+        error: 'Too many taps from this network',
+        retryAfterMs: ipCheck.retryAfterMs
+      }
+    }
+
+    // Check per-address rate limiting
+    const canTap = tapTracker.canTap(userArkAddress, venueId, TAP_COOLDOWN_MS)
+    if (!canTap.allowed) {
+      return {
+        success: false,
+        status: 429,
+        error: 'Too many taps',
+        retryAfterMs: canTap.retryAfterMs
+      }
+    }
+
+    // Check daily spend cap
+    if (DAILY_SPEND_CAP_SATS > 0) {
+      const todaySpend = tapTracker.getTodaySpend()
+      if (todaySpend + rewardSats > DAILY_SPEND_CAP_SATS) {
+        console.warn(`[Tap] Daily spend cap reached: ${todaySpend}/${DAILY_SPEND_CAP_SATS} sats`)
+        return {
+          success: false,
+          status: 503,
+          error: 'Daily reward limit reached. Try again tomorrow.'
+        }
+      }
+    }
+
+    // Insert pending tap (holds the slot for rate limiting)
+    tapId = tapTracker.beginTap(userArkAddress, venueId, nfcTagId, rewardSats, ip, idempotencyKey)
+  } finally {
+    release()
+  }
+
+  // Send reward outside mutex (slow network call)
+  try {
+    const txid = await hotWallet.sendReward(userArkAddress, rewardSats)
+    tapTracker.completeTap(tapId, txid)
+    return {
+      success: true,
+      txid,
+      amount: rewardSats,
+      message: `You earned ${rewardSats} sats!`
+    }
+  } catch (error) {
+    tapTracker.failTap(tapId)
+    throw error
   }
 }
 
@@ -249,8 +289,10 @@ app.post('/tap', async (req, res) => {
     return res.status(400).json({ error: 'Invalid ARK address format' })
   }
 
+  const idempotencyKey = req.headers['idempotency-key'] as string | undefined
+
   try {
-    const result = await processTap(userArkAddress, venueId, nfcTagId, ip)
+    const result = await processTap(userArkAddress, venueId, nfcTagId, ip, idempotencyKey)
     if (!result.success) {
       return res.status(result.status || 500).json(result)
     }
