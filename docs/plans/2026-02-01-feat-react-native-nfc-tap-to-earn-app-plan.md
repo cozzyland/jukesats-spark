@@ -2,12 +2,12 @@
 title: "feat: React Native NFC Tap-to-Earn App"
 type: feat
 date: 2026-02-01
-updated: 2026-02-04
+updated: 2026-02-05
 ---
 
 # React Native NFC Tap-to-Earn App for Jukesats
 
-## Implementation Status (Updated 2026-02-04)
+## Implementation Status (Updated 2026-02-05)
 
 **Repo:** `https://github.com/cozzyland/jukesats-app` — monorepo (Expo app at root, server in `server/`)
 
@@ -18,6 +18,7 @@ updated: 2026-02-04
 | Phase 3: UI States | **DONE** | Single-screen UI with all overlays built |
 | Phase 3: EAS Build config | **DONE** | `eas.json` created |
 | Phase 3: Build & TestFlight | **NOT STARTED** | Needs Apple Developer account, signing |
+| Phase 4: Production Hardening | **DONE** | SQLite, concurrency, security, CI/CD, deployed to Fly.io |
 | NFC end-to-end testing | **NOT STARTED** | Needs physical device + NFC tags |
 
 ### Critical SDK Finding
