@@ -37,7 +37,8 @@ export function createDb(dbPath: string = DB_PATH): Database.Database {
     db.exec(`ALTER TABLE taps ADD COLUMN txid TEXT`)
   }
   if (!columnNames.has('idempotency_key')) {
-    db.exec(`ALTER TABLE taps ADD COLUMN idempotency_key TEXT UNIQUE`)
+    db.exec(`ALTER TABLE taps ADD COLUMN idempotency_key TEXT`)
+    db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_taps_idempotency_key ON taps(idempotency_key)`)
   }
 
   db.exec(`
