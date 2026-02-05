@@ -8,6 +8,17 @@ export function createDb(dbPath: string = DB_PATH): Database.Database {
   db.pragma('journal_mode = WAL')
   db.pragma('foreign_keys = ON')
 
+  // Check if existing taps table has incompatible schema (from pre-SQLite era)
+  const tableExists = db.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='taps'`).get()
+  if (tableExists) {
+    const columns = db.pragma('table_info(taps)') as { name: string }[]
+    const columnNames = new Set(columns.map(c => c.name))
+    if (!columnNames.has('user_ark_address')) {
+      // Old table with incompatible schema — drop and recreate
+      db.exec(`DROP TABLE taps`)
+    }
+  }
+
   db.exec(`
     CREATE TABLE IF NOT EXISTS taps (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -21,27 +32,7 @@ export function createDb(dbPath: string = DB_PATH): Database.Database {
       idempotency_key TEXT UNIQUE,
       created_at INTEGER NOT NULL
     );
-  `)
 
-  // Migrate old schema: add columns that may be missing
-  const columns = db.pragma('table_info(taps)') as { name: string }[]
-  const columnNames = new Set(columns.map(c => c.name))
-
-  if (!columnNames.has('ip')) {
-    db.exec(`ALTER TABLE taps ADD COLUMN ip TEXT NOT NULL DEFAULT ''`)
-  }
-  if (!columnNames.has('status')) {
-    db.exec(`ALTER TABLE taps ADD COLUMN status TEXT NOT NULL DEFAULT 'completed'`)
-  }
-  if (!columnNames.has('txid')) {
-    db.exec(`ALTER TABLE taps ADD COLUMN txid TEXT`)
-  }
-  if (!columnNames.has('idempotency_key')) {
-    db.exec(`ALTER TABLE taps ADD COLUMN idempotency_key TEXT`)
-    db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_taps_idempotency_key ON taps(idempotency_key)`)
-  }
-
-  db.exec(`
     CREATE INDEX IF NOT EXISTS idx_taps_user ON taps(user_ark_address);
     CREATE INDEX IF NOT EXISTS idx_taps_venue ON taps(venue_id);
     CREATE INDEX IF NOT EXISTS idx_taps_ip ON taps(ip);
