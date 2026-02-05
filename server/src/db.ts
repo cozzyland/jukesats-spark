@@ -15,13 +15,32 @@ export function createDb(dbPath: string = DB_PATH): Database.Database {
       venue_id TEXT NOT NULL,
       nfc_tag_id TEXT NOT NULL,
       reward_sats INTEGER NOT NULL,
-      ip TEXT NOT NULL,
+      ip TEXT NOT NULL DEFAULT '',
       status TEXT NOT NULL DEFAULT 'completed',
       txid TEXT,
       idempotency_key TEXT UNIQUE,
       created_at INTEGER NOT NULL
     );
+  `)
 
+  // Migrate old schema: add columns that may be missing
+  const columns = db.pragma('table_info(taps)') as { name: string }[]
+  const columnNames = new Set(columns.map(c => c.name))
+
+  if (!columnNames.has('ip')) {
+    db.exec(`ALTER TABLE taps ADD COLUMN ip TEXT NOT NULL DEFAULT ''`)
+  }
+  if (!columnNames.has('status')) {
+    db.exec(`ALTER TABLE taps ADD COLUMN status TEXT NOT NULL DEFAULT 'completed'`)
+  }
+  if (!columnNames.has('txid')) {
+    db.exec(`ALTER TABLE taps ADD COLUMN txid TEXT`)
+  }
+  if (!columnNames.has('idempotency_key')) {
+    db.exec(`ALTER TABLE taps ADD COLUMN idempotency_key TEXT UNIQUE`)
+  }
+
+  db.exec(`
     CREATE INDEX IF NOT EXISTS idx_taps_user ON taps(user_ark_address);
     CREATE INDEX IF NOT EXISTS idx_taps_venue ON taps(venue_id);
     CREATE INDEX IF NOT EXISTS idx_taps_ip ON taps(ip);
