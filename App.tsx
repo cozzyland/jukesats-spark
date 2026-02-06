@@ -6,11 +6,13 @@ import {
   ActivityIndicator,
   Pressable,
   Animated,
+  Share,
 } from 'react-native'
 import { StatusBar } from 'expo-status-bar'
 import * as SplashScreen from 'expo-splash-screen'
 import * as Linking from 'expo-linking'
 import { initWallet, getAddress, getWallet, getCachedAddress } from './src/wallet'
+import { WithdrawOverlay } from './src/WithdrawOverlay'
 
 const API_URL = 'https://jukesats-server.fly.dev'
 const REWARD_SATS = 330
@@ -79,6 +81,7 @@ async function submitTap(
 export default function App() {
   const [state, setState] = useState<AppState>({ kind: 'loading' })
   const [fadeAnim] = useState(() => new Animated.Value(0))
+  const [withdrawOpen, setWithdrawOpen] = useState(false)
 
   // Cold start
   useEffect(() => {
@@ -90,7 +93,11 @@ export default function App() {
     const sub = Linking.addEventListener('url', ({ url }) => {
       if (state.kind === 'loading') return
       const tap = parseDeepLink(url)
-      if (tap) handleTap(tap.venueId, tap.tagId)
+      if (tap) {
+        // Close withdraw overlay if open — tap takes priority
+        setWithdrawOpen(false)
+        handleTap(tap.venueId, tap.tagId)
+      }
     })
     return () => sub.remove()
   }, [state.kind])
@@ -220,6 +227,7 @@ export default function App() {
     try {
       const w = getWallet()
       const bal = await w.getBalance()
+      console.log('[Balance]', JSON.stringify(bal))
       return Number(bal.available)
     } catch {
       return 0
@@ -295,7 +303,23 @@ export default function App() {
         {address}
       </Text>
 
+      <Pressable
+        style={styles.receiveButton}
+        onPress={() => Share.share({ message: address })}
+      >
+        <Text style={styles.receiveButtonText}>Receive</Text>
+      </Pressable>
+
       <Text style={styles.hint}>Tap an NFC tag at a partner cafe to earn sats</Text>
+
+      {balance > 0 && (
+        <Pressable
+          style={styles.withdrawButton}
+          onPress={() => setWithdrawOpen(true)}
+        >
+          <Text style={styles.withdrawButtonText}>Withdraw</Text>
+        </Pressable>
+      )}
 
       {state.kind === 'tapSuccess' && (
         <Animated.View style={[styles.overlay, { opacity: fadeAnim }]}>
@@ -303,6 +327,16 @@ export default function App() {
             +{state.reward} sats!
           </Text>
         </Animated.View>
+      )}
+
+      {withdrawOpen && (
+        <WithdrawOverlay
+          balance={balance}
+          onClose={() => {
+            setWithdrawOpen(false)
+            refreshBalance()
+          }}
+        />
       )}
 
       <StatusBar style="light" />
@@ -344,12 +378,38 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#555',
     maxWidth: 280,
-    marginBottom: 30,
+    marginBottom: 12,
+  },
+  receiveButton: {
+    borderWidth: 1,
+    borderColor: '#444',
+    paddingHorizontal: 24,
+    paddingVertical: 10,
+    borderRadius: 8,
+    marginBottom: 8,
+  },
+  receiveButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#fff',
   },
   hint: {
     fontSize: 16,
     color: '#666',
     textAlign: 'center',
+  },
+  withdrawButton: {
+    marginTop: 24,
+    borderWidth: 1,
+    borderColor: '#f7931a',
+    paddingHorizontal: 32,
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+  withdrawButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#f7931a',
   },
   overlay: {
     position: 'absolute',

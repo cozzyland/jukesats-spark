@@ -60,3 +60,9 @@ export function getWallet(): Wallet {
 export function getAddress(): string | null {
   return address
 }
+
+/** Send bitcoin to an ARK address. Returns txid. */
+export async function sendBitcoin(recipientAddress: string, amount: number): Promise<string> {
+  const w = getWallet()
+  return w.sendBitcoin({ address: recipientAddress, amount })
+}
