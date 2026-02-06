@@ -38,6 +38,17 @@ export function createDb(dbPath: string = DB_PATH): Database.Database {
     CREATE INDEX IF NOT EXISTS idx_taps_ip ON taps(ip);
     CREATE INDEX IF NOT EXISTS idx_taps_created ON taps(created_at);
     CREATE INDEX IF NOT EXISTS idx_taps_user_venue_created ON taps(user_ark_address, venue_id, created_at);
+
+    CREATE TABLE IF NOT EXISTS nfc_tags (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      tag_id TEXT NOT NULL,
+      venue_id TEXT NOT NULL,
+      active INTEGER NOT NULL DEFAULT 1,
+      created_at INTEGER NOT NULL
+    );
+
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_nfc_tags_tag_venue ON nfc_tags(tag_id, venue_id);
+    CREATE INDEX IF NOT EXISTS idx_nfc_tags_venue ON nfc_tags(venue_id);
   `)
 
   return db

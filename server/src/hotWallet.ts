@@ -31,7 +31,19 @@ export class HotWallet {
       throw new Error('HOT_WALLET_PRIVATE_KEY environment variable required')
     }
 
-    const identity = SingleKey.fromHex(privateKeyHex)
+    if (privateKeyHex.length !== 64 || !/^[0-9a-fA-F]+$/.test(privateKeyHex)) {
+      throw new Error('HOT_WALLET_PRIVATE_KEY must be a 64-character hex string')
+    }
+
+    let identity: ReturnType<typeof SingleKey.fromHex>
+    try {
+      identity = SingleKey.fromHex(privateKeyHex)
+    } catch {
+      throw new Error('HOT_WALLET_PRIVATE_KEY is invalid (failed to parse)')
+    }
+
+    // Clear private key from env to reduce exposure window
+    delete process.env.HOT_WALLET_PRIVATE_KEY
 
     this.wallet = await Wallet.create({
       identity,

@@ -62,7 +62,7 @@ describe('Server endpoints', () => {
     it('rejects invalid address format', async () => {
       const res = await request(app)
         .post('/tap')
-        .send({ userArkAddress: 'invalid123', venueId: 'venue-1', nfcTagId: 'tag-1' })
+        .send({ userArkAddress: 'invalid123', venueId: 'venue-1', nfcTagId: 'admin-test-tag' })
       expect(res.status).toBe(400)
       expect(res.body.error).toContain('Invalid ARK address')
     })
@@ -70,7 +70,7 @@ describe('Server endpoints', () => {
     it('rejects unknown venue', async () => {
       const res = await request(app)
         .post('/tap')
-        .send({ userArkAddress: 'tark1user1', venueId: 'unknown-venue', nfcTagId: 'tag-1' })
+        .send({ userArkAddress: 'tark1user1', venueId: 'unknown-venue', nfcTagId: 'admin-test-tag' })
       expect(res.status).toBe(400)
       expect(res.body.error).toContain('Unknown venue')
     })
@@ -78,7 +78,7 @@ describe('Server endpoints', () => {
     it('processes valid tap', async () => {
       const res = await request(app)
         .post('/tap')
-        .send({ userArkAddress: 'tark1newtestuser', venueId: 'venue-1', nfcTagId: 'tag-1' })
+        .send({ userArkAddress: 'tark1newtestuser', venueId: 'venue-1', nfcTagId: 'admin-test-tag' })
       expect(res.status).toBe(200)
       expect(res.body.success).toBe(true)
       expect(res.body.txid).toBe('mocktxid123')
@@ -116,6 +116,67 @@ describe('Server endpoints', () => {
     })
   })
 
+  describe('Admin tag endpoints', () => {
+    it('registers a tag', async () => {
+      const res = await request(app)
+        .post('/admin/tags')
+        .set('Authorization', 'Bearer test-admin-token')
+        .send({ tagId: 'admin-test-tag', venueId: 'venue-1' })
+      expect(res.status).toBe(201)
+      expect(res.body.tag_id).toBe('admin-test-tag')
+    })
+
+    it('lists tags for a venue', async () => {
+      const res = await request(app)
+        .get('/admin/tags/venue-1')
+        .set('Authorization', 'Bearer test-admin-token')
+      expect(res.status).toBe(200)
+      expect(res.body.tags).toBeDefined()
+    })
+
+    it('deactivates a tag', async () => {
+      // Register then deactivate
+      await request(app)
+        .post('/admin/tags')
+        .set('Authorization', 'Bearer test-admin-token')
+        .send({ tagId: 'del-tag', venueId: 'venue-2' })
+
+      const res = await request(app)
+        .delete('/admin/tags/venue-2/del-tag')
+        .set('Authorization', 'Bearer test-admin-token')
+      expect(res.status).toBe(200)
+      expect(res.body.success).toBe(true)
+    })
+
+    it('rejects tag registration without auth', async () => {
+      const res = await request(app)
+        .post('/admin/tags')
+        .send({ tagId: 'tag-1', venueId: 'venue-1' })
+      expect(res.status).toBe(401)
+    })
+  })
+
+  describe('NFC tag validation in /tap', () => {
+    it('rejects tap with unregistered tag when tags exist', async () => {
+      // Tags were registered in previous tests, so tag validation is active
+      const address = 'tark1tagtest' + Date.now()
+      const res = await request(app)
+        .post('/tap')
+        .send({ userArkAddress: address, venueId: 'venue-1', nfcTagId: 'fake-unknown-tag' })
+      expect(res.status).toBe(400)
+      expect(res.body.error).toContain('Unregistered NFC tag')
+    })
+
+    it('accepts tap with registered tag', async () => {
+      const address = 'tark1validtag' + Date.now()
+      const res = await request(app)
+        .post('/tap')
+        .send({ userArkAddress: address, venueId: 'venue-1', nfcTagId: 'admin-test-tag' })
+      expect(res.status).toBe(200)
+      expect(res.body.success).toBe(true)
+    })
+  })
+
   describe('POST /simulate-tap', () => {
     it('returns 404 when disabled', async () => {
       const res = await request(app)
@@ -147,7 +208,7 @@ describe('Server endpoints', () => {
 
       const res = await request(app)
         .post('/tap')
-        .send({ userArkAddress: address, venueId: 'venue-1', nfcTagId: 'tag-1' })
+        .send({ userArkAddress: address, venueId: 'venue-1', nfcTagId: 'admin-test-tag' })
 
       expect(res.status).toBe(500)
       expect(res.body.error).toBe('Failed to process tap')
@@ -162,12 +223,25 @@ describe('Server endpoints', () => {
 
       // Fire two taps concurrently
       const [res1, res2] = await Promise.all([
-        request(app).post('/tap').send({ userArkAddress: address, venueId: 'venue-1', nfcTagId: 'tag-1' }),
-        request(app).post('/tap').send({ userArkAddress: address, venueId: 'venue-1', nfcTagId: 'tag-1' })
+        request(app).post('/tap').send({ userArkAddress: address, venueId: 'venue-1', nfcTagId: 'admin-test-tag' }),
+        request(app).post('/tap').send({ userArkAddress: address, venueId: 'venue-1', nfcTagId: 'admin-test-tag' })
       ])
 
       const statuses = [res1.status, res2.status].sort()
       expect(statuses).toEqual([200, 429])
+    })
+
+    it('allows different users to tap concurrently (both 200)', async () => {
+      const addr1 = 'tark1parallel1_' + Date.now()
+      const addr2 = 'tark1parallel2_' + Date.now()
+
+      const [res1, res2] = await Promise.all([
+        request(app).post('/tap').send({ userArkAddress: addr1, venueId: 'venue-1', nfcTagId: 'admin-test-tag' }),
+        request(app).post('/tap').send({ userArkAddress: addr2, venueId: 'venue-1', nfcTagId: 'admin-test-tag' })
+      ])
+
+      expect(res1.status).toBe(200)
+      expect(res2.status).toBe(200)
     })
 
     it('records failed send with status=failed', async () => {
@@ -176,7 +250,7 @@ describe('Server endpoints', () => {
 
       const res = await request(app)
         .post('/tap')
-        .send({ userArkAddress: address, venueId: 'venue-1', nfcTagId: 'tag-1' })
+        .send({ userArkAddress: address, venueId: 'venue-1', nfcTagId: 'admin-test-tag' })
 
       expect(res.status).toBe(500)
 
@@ -184,7 +258,7 @@ describe('Server endpoints', () => {
       hotWallet.sendReward.mockResolvedValueOnce('retrytxid123')
       const retry = await request(app)
         .post('/tap')
-        .send({ userArkAddress: address, venueId: 'venue-1', nfcTagId: 'tag-1' })
+        .send({ userArkAddress: address, venueId: 'venue-1', nfcTagId: 'admin-test-tag' })
 
       expect(retry.status).toBe(200)
       expect(retry.body.success).toBe(true)

@@ -7,6 +7,14 @@ interface UserStats {
   venues: string[]
 }
 
+interface NfcTag {
+  id: number
+  tag_id: string
+  venue_id: string
+  active: number
+  created_at: number
+}
+
 /**
  * Tracks taps for rate limiting and analytics using SQLite
  */
@@ -23,6 +31,11 @@ export class TapTracker {
   private stmtUserVenues
   private stmtVenueStats
   private stmtVenueUniqueUsers
+  private stmtInsertTag
+  private stmtFindActiveTag
+  private stmtListTagsByVenue
+  private stmtDeactivateTag
+  private stmtTagCount
 
   constructor(private db: Database.Database) {
     this.stmtInsert = db.prepare(`
@@ -83,6 +96,27 @@ export class TapTracker {
     this.stmtVenueUniqueUsers = db.prepare(`
       SELECT COUNT(DISTINCT user_ark_address) as uniqueUsers
       FROM taps WHERE venue_id = ?
+    `)
+
+    this.stmtInsertTag = db.prepare(`
+      INSERT INTO nfc_tags (tag_id, venue_id, active, created_at)
+      VALUES (?, ?, 1, ?)
+    `)
+
+    this.stmtFindActiveTag = db.prepare(`
+      SELECT id FROM nfc_tags WHERE tag_id = ? AND venue_id = ? AND active = 1
+    `)
+
+    this.stmtListTagsByVenue = db.prepare(`
+      SELECT id, tag_id, venue_id, active, created_at FROM nfc_tags WHERE venue_id = ?
+    `)
+
+    this.stmtDeactivateTag = db.prepare(`
+      UPDATE nfc_tags SET active = 0 WHERE tag_id = ? AND venue_id = ?
+    `)
+
+    this.stmtTagCount = db.prepare(`
+      SELECT COUNT(*) as count FROM nfc_tags
     `)
   }
 
@@ -197,5 +231,39 @@ export class TapTracker {
       uniqueUsers: users.uniqueUsers,
       totalRewardsSats: stats.totalRewardsSats
     }
+  }
+
+  /**
+   * Check if an NFC tag is registered and active for a venue.
+   * Returns true if no tags are registered (open mode) or if the tag is valid.
+   */
+  isValidTag(tagId: string, venueId: string): boolean {
+    const tagCount = this.stmtTagCount.get() as { count: number }
+    if (tagCount.count === 0) return true // No tags registered = open mode
+    return !!this.stmtFindActiveTag.get(tagId, venueId)
+  }
+
+  /**
+   * Register an NFC tag for a venue
+   */
+  registerTag(tagId: string, venueId: string): NfcTag {
+    this.stmtInsertTag.run(tagId, venueId, Date.now())
+    const tag = this.stmtFindActiveTag.get(tagId, venueId) as { id: number }
+    return { id: tag.id, tag_id: tagId, venue_id: venueId, active: 1, created_at: Date.now() }
+  }
+
+  /**
+   * List all tags for a venue
+   */
+  listTagsByVenue(venueId: string): NfcTag[] {
+    return this.stmtListTagsByVenue.all(venueId) as NfcTag[]
+  }
+
+  /**
+   * Deactivate an NFC tag
+   */
+  deactivateTag(tagId: string, venueId: string): boolean {
+    const result = this.stmtDeactivateTag.run(tagId, venueId)
+    return result.changes > 0
   }
 }

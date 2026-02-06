@@ -83,6 +83,52 @@ describe('TapTracker', () => {
     })
   })
 
+  describe('NFC tag validation', () => {
+    it('allows any tag when no tags registered (open mode)', () => {
+      expect(tracker.isValidTag('any-tag', 'any-venue')).toBe(true)
+    })
+
+    it('rejects unknown tag after tags are registered', () => {
+      tracker.registerTag('real-tag-1', 'venue-1')
+      expect(tracker.isValidTag('fake-tag', 'venue-1')).toBe(false)
+    })
+
+    it('accepts registered active tag', () => {
+      tracker.registerTag('tag-abc', 'venue-1')
+      expect(tracker.isValidTag('tag-abc', 'venue-1')).toBe(true)
+    })
+
+    it('rejects tag registered for different venue', () => {
+      tracker.registerTag('tag-abc', 'venue-1')
+      expect(tracker.isValidTag('tag-abc', 'venue-2')).toBe(false)
+    })
+
+    it('rejects deactivated tag', () => {
+      tracker.registerTag('tag-abc', 'venue-1')
+      tracker.deactivateTag('tag-abc', 'venue-1')
+      expect(tracker.isValidTag('tag-abc', 'venue-1')).toBe(false)
+    })
+
+    it('lists tags by venue', () => {
+      tracker.registerTag('tag-1', 'venue-1')
+      tracker.registerTag('tag-2', 'venue-1')
+      tracker.registerTag('tag-3', 'venue-2')
+      const tags = tracker.listTagsByVenue('venue-1')
+      expect(tags).toHaveLength(2)
+      expect(tags.map(t => t.tag_id)).toContain('tag-1')
+      expect(tags.map(t => t.tag_id)).toContain('tag-2')
+    })
+
+    it('deactivateTag returns false for non-existent tag', () => {
+      expect(tracker.deactivateTag('no-such-tag', 'venue-1')).toBe(false)
+    })
+
+    it('rejects duplicate tag registration', () => {
+      tracker.registerTag('tag-1', 'venue-1')
+      expect(() => tracker.registerTag('tag-1', 'venue-1')).toThrow()
+    })
+  })
+
   describe('getUserStats', () => {
     it('returns empty stats for unknown user', () => {
       const stats = tracker.getUserStats('tark1unknown', 330)

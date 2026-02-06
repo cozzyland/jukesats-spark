@@ -60,19 +60,24 @@ app.get('/tap', (req, res) => {
 const db = createDb()
 export const tapTracker = new TapTracker(db)
 
-// Mutex for serializing tap processing
-class Mutex {
-  private _lock: Promise<void> = Promise.resolve()
-  async acquire(): Promise<() => void> {
+// Per-user mutex for serializing tap processing without cross-user blocking
+class MutexMap {
+  private locks = new Map<string, Promise<void>>()
+
+  async acquire(key: string): Promise<() => void> {
+    while (this.locks.has(key)) {
+      await this.locks.get(key)
+    }
     let release: () => void
-    const next = new Promise<void>(r => { release = r })
-    const prev = this._lock
-    this._lock = next
-    await prev
-    return release!
+    const promise = new Promise<void>(r => { release = r })
+    this.locks.set(key, promise)
+    return () => {
+      this.locks.delete(key)
+      release!()
+    }
   }
 }
-const tapMutex = new Mutex()
+const tapMutex = new MutexMap()
 
 // Config with validation
 export const DEFAULT_REWARD_SATS = requirePositiveInt('DEFAULT_REWARD_SATS', 330)
@@ -215,6 +220,44 @@ app.post('/admin/recover', requireAdmin, async (req, res) => {
 })
 
 /**
+ * Register an NFC tag for a venue
+ */
+app.post('/admin/tags', requireAdmin, (req, res) => {
+  const { tagId, venueId } = req.body
+  if (!tagId || !venueId) {
+    return res.status(400).json({ error: 'tagId and venueId required' })
+  }
+  try {
+    const tag = tapTracker.registerTag(tagId, venueId)
+    res.status(201).json(tag)
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('UNIQUE constraint')) {
+      return res.status(409).json({ error: 'Tag already registered for this venue' })
+    }
+    res.status(500).json({ error: 'Failed to register tag' })
+  }
+})
+
+/**
+ * List tags for a venue
+ */
+app.get('/admin/tags/:venueId', requireAdmin, (req, res) => {
+  const tags = tapTracker.listTagsByVenue(req.params.venueId)
+  res.json({ tags })
+})
+
+/**
+ * Deactivate an NFC tag
+ */
+app.delete('/admin/tags/:venueId/:tagId', requireAdmin, (req, res) => {
+  const deactivated = tapTracker.deactivateTag(req.params.tagId, req.params.venueId)
+  if (!deactivated) {
+    return res.status(404).json({ error: 'Tag not found' })
+  }
+  res.json({ success: true })
+})
+
+/**
  * Core tap processing logic with mutex for concurrency control
  */
 export async function processTap(userArkAddress: string, venueId: string, nfcTagId: string, ip: string, idempotencyKey?: string) {
@@ -231,8 +274,8 @@ export async function processTap(userArkAddress: string, venueId: string, nfcTag
     }
   }
 
-  // Acquire mutex for rate-limit checks + INSERT pending
-  const release = await tapMutex.acquire()
+  // Acquire per-user mutex for rate-limit checks + INSERT pending
+  const release = await tapMutex.acquire(userArkAddress)
   let tapId: number
   const rewardSats = DEFAULT_REWARD_SATS
 
@@ -243,6 +286,15 @@ export async function processTap(userArkAddress: string, venueId: string, nfcTag
         success: false,
         status: 400,
         error: 'Unknown venue'
+      }
+    }
+
+    // Validate NFC tag is registered for this venue
+    if (!tapTracker.isValidTag(nfcTagId, venueId)) {
+      return {
+        success: false,
+        status: 400,
+        error: 'Unregistered NFC tag'
       }
     }
 
