@@ -2,7 +2,7 @@
 title: "feat: React Native NFC Tap-to-Earn App"
 type: feat
 date: 2026-02-01
-updated: 2026-02-05
+updated: 2026-02-06
 ---
 
 # React Native NFC Tap-to-Earn App for Jukesats
@@ -20,6 +20,7 @@ updated: 2026-02-05
 | Phase 3: Build & TestFlight | **NOT STARTED** | Needs Apple Developer account, signing |
 | Phase 4: Production Hardening | **DONE** | SQLite, concurrency, security, CI/CD, deployed to Fly.io |
 | NFC end-to-end testing | **NOT STARTED** | Needs physical device + NFC tags |
+| Phase 5: Code Review Findings | **PENDING** | 15 todos created, see `todos/` directory |
 
 ### Critical SDK Finding
 
@@ -31,6 +32,31 @@ updated: 2026-02-05
 ### Architecture Change from Plan
 
 The plan originally said "creates a new repo" for the app only, with server staying in `jukesats`. Instead, `jukesats-app` is a **monorepo** — server source lives in `server/`, Expo app at root. The `jukesats` repo remains as PWA legacy only.
+
+### Code Review Findings (2026-02-06)
+
+A comprehensive code review identified 15 issues. See `todos/` directory for full details.
+
+**P1 Critical (6 items):**
+- NFC tag validation missing (spoofing possible)
+- Hot wallet key in env var (should use secrets manager)
+- Inconsistent balance update (cold vs warm start)
+- No config validation at startup
+- Global mutex bottleneck under load
+- Memory leak in fund listener
+
+**P2 Important (5 items):**
+- No audit logging for transactions
+- Client doesn't send idempotency key
+- IP rate limiting easily bypassed
+- No user tap history endpoint
+- Fragile database migration pattern
+
+**P3 Nice-to-have (4 items):**
+- Structured logging
+- Metrics endpoint
+- Request timeouts
+- JSDoc documentation
 
 ### Key Files
 

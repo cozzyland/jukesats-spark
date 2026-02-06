@@ -14,6 +14,7 @@ export class HotWallet {
   private vtxoManager: VtxoManager | null = null
   private storage: FileSystemStorageAdapter
   private lastBalanceWarning: number = 0
+  private listenerAbortController: AbortController | null = null
 
   constructor() {
     this.storage = new FileSystemStorageAdapter(STORAGE_PATH)
@@ -94,18 +95,22 @@ export class HotWallet {
 
   /**
    * Listen for incoming funds in the background
-   * Uses double-reload pattern from reference wallet for indexer sync
+   * Stoppable via shutdown() method
    */
   private async listenForIncomingFunds() {
     if (!this.wallet) return
 
+    this.listenerAbortController = new AbortController()
     console.log('[HotWallet] Listening for incoming funds...')
 
     let backoffMs = 1000
 
-    while (true) {
+    while (!this.listenerAbortController.signal.aborted) {
       try {
         const incoming = await waitForIncomingFunds(this.wallet)
+
+        // Check if we should stop after await returns
+        if (this.listenerAbortController.signal.aborted) break
 
         if (incoming.type === 'vtxo') {
           console.log(`[HotWallet] Received ${incoming.newVtxos.length} new VTXOs!`)
@@ -116,26 +121,34 @@ export class HotWallet {
           console.log(`[HotWallet] Received ${incoming.coins.length} UTXOs!`)
         }
 
-        // Immediate balance refresh
+        // Immediate balance refresh (removed redundant delayed refresh)
         const balance = await this.wallet.getBalance()
         console.log(`[HotWallet] New balance: ${balance.available} sats available`)
-
-        // Second refresh after 5 seconds (reference wallet pattern for indexer lag)
-        setTimeout(async () => {
-          if (!this.wallet) return
-          const refreshedBalance = await this.wallet.getBalance()
-          console.log(`[HotWallet] Refreshed balance: ${refreshedBalance.available} sats available`)
-        }, 5000)
 
         // Reset backoff on success
         backoffMs = 1000
 
       } catch (error) {
+        if (this.listenerAbortController.signal.aborted) break
         console.error('[HotWallet] Error listening for funds:', error)
         await new Promise(resolve => setTimeout(resolve, backoffMs))
         backoffMs = Math.min(backoffMs * 2, 60_000)
       }
     }
+
+    console.log('[HotWallet] Fund listener stopped')
+  }
+
+  /**
+   * Gracefully shutdown the hot wallet
+   */
+  shutdown() {
+    console.log('[HotWallet] Shutting down...')
+    if (this.listenerAbortController) {
+      this.listenerAbortController.abort()
+    }
+    // VtxoManager runs on a timer interval; setting to null allows GC
+    this.vtxoManager = null
   }
 
   /**

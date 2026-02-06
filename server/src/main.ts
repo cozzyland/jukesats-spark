@@ -11,6 +11,27 @@ import { createDb } from './db.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
+// Config validation helpers
+function requirePositiveInt(name: string, defaultValue: number): number {
+  const raw = process.env[name]
+  if (!raw) return defaultValue
+  const parsed = parseInt(raw, 10)
+  if (isNaN(parsed) || parsed <= 0) {
+    throw new Error(`${name} must be a positive integer, got: "${raw}"`)
+  }
+  return parsed
+}
+
+function requireNonNegativeInt(name: string, defaultValue: number): number {
+  const raw = process.env[name]
+  if (!raw) return defaultValue
+  const parsed = parseInt(raw, 10)
+  if (isNaN(parsed) || parsed < 0) {
+    throw new Error(`${name} must be a non-negative integer, got: "${raw}"`)
+  }
+  return parsed
+}
+
 export const app = express()
 export const PORT = process.env.PORT || 3001
 
@@ -53,14 +74,25 @@ class Mutex {
 }
 const tapMutex = new Mutex()
 
-// Config
-export const DEFAULT_REWARD_SATS = parseInt(process.env.DEFAULT_REWARD_SATS || '330', 10)
-export const TAP_COOLDOWN_MS = parseInt(process.env.TAP_COOLDOWN_MS || '60000', 10)
+// Config with validation
+export const DEFAULT_REWARD_SATS = requirePositiveInt('DEFAULT_REWARD_SATS', 330)
+export const TAP_COOLDOWN_MS = requireNonNegativeInt('TAP_COOLDOWN_MS', 60000)
 export const ADMIN_TOKEN = process.env.ADMIN_TOKEN || ''
 export const ALLOWED_VENUES = (process.env.ALLOWED_VENUES || '').split(',').map((v: string) => v.trim()).filter(Boolean)
-export const DAILY_SPEND_CAP_SATS = parseInt(process.env.DAILY_SPEND_CAP_SATS || '100000', 10)
-export const IP_RATE_LIMIT_MAX = parseInt(process.env.IP_RATE_LIMIT_MAX || '10', 10)
+export const DAILY_SPEND_CAP_SATS = requirePositiveInt('DAILY_SPEND_CAP_SATS', 100000)
+export const IP_RATE_LIMIT_MAX = requirePositiveInt('IP_RATE_LIMIT_MAX', 10)
 export const ENABLE_SIMULATE_TAP = process.env.ENABLE_SIMULATE_TAP === 'true'
+
+// Log config at startup (secrets redacted)
+console.log('[Config] Loaded:', {
+  DEFAULT_REWARD_SATS,
+  TAP_COOLDOWN_MS,
+  ADMIN_TOKEN: ADMIN_TOKEN ? '***' : '(not set)',
+  ALLOWED_VENUES: ALLOWED_VENUES.length > 0 ? ALLOWED_VENUES : '(all venues allowed)',
+  DAILY_SPEND_CAP_SATS,
+  IP_RATE_LIMIT_MAX,
+  ENABLE_SIMULATE_TAP,
+})
 
 /**
  * Admin auth middleware
@@ -370,6 +402,7 @@ export async function start() {
 
     const shutdown = (signal: string) => {
       console.log(`[Server] ${signal} received, shutting down...`)
+      hotWallet.shutdown()
       server.close(() => {
         db.close()
         console.log('[Server] Shutdown complete')

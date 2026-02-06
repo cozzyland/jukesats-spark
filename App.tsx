@@ -36,7 +36,11 @@ function parseDeepLink(url: string | null): { venueId: string; tagId: string } |
   if (!url) return null
   try {
     const parsed = new URL(url)
-    if (parsed.pathname !== '/tap') return null
+    // Universal Links (iOS) / App Links (Android): https://cozzyland.net/tap?venue=...
+    // Custom scheme fallback (Android + simulator testing): jukesats://tap?venue=...
+    // In custom scheme URLs, "tap" becomes the host, not the path
+    const isTapPath = parsed.pathname === '/tap' || parsed.host === 'tap'
+    if (!isTapPath) return null
     const venueId = parsed.searchParams.get('venue')
     if (!venueId) return null
     return { venueId, tagId: parsed.searchParams.get('tag') || 'unknown' }
@@ -141,14 +145,14 @@ export default function App() {
           console.warn('Wallet init failed, will retry:', e)
         }
 
-        handleTapResult(tapResult, cachedAddr)
+        await handleTapResult(tapResult, cachedAddr)
       } else {
         // First-time user OR no tap — must init wallet to get address
         const addr = await initWallet()
 
         if (tapParams) {
           const tapResult = await submitTap(addr, tapParams.venueId, tapParams.tagId)
-          handleTapResult(tapResult, addr)
+          await handleTapResult(tapResult, addr)
         } else {
           const balance = await getBalance()
           setState({ kind: 'ready', balance, address: addr })
@@ -164,11 +168,12 @@ export default function App() {
     }
   }
 
-  function handleTapResult(tapResult: TapResult, addr: string) {
+  async function handleTapResult(tapResult: TapResult, addr: string) {
     if (tapResult.success) {
+      const balance = await getBalance()
       setState({
         kind: 'tapSuccess',
-        balance: 0,
+        balance,
         address: addr,
         reward: tapResult.amount || REWARD_SATS,
       })
