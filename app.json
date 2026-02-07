@@ -18,7 +18,8 @@
       "bundleIdentifier": "com.jukesats.app",
       "associatedDomains": ["applinks:cozzyland.net"],
       "infoPlist": {
-        "NFCReaderUsageDescription": "Jukesats uses NFC to detect tap points at cafes."
+        "NFCReaderUsageDescription": "Jukesats uses NFC to detect tap points at cafes.",
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {

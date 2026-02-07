@@ -2,7 +2,7 @@
   "applinks": {
     "details": [
       {
-        "appIDs": ["TEAMID.com.jukesats.app"],
+        "appIDs": ["28TK9V7C2B.com.jukesats.app"],
         "components": [
           { "/": "/tap*" }
         ]
