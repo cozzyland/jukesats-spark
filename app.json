@@ -16,7 +16,9 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.jukesats.app",
-      "associatedDomains": ["applinks:cozzyland.net"],
+      "associatedDomains": [
+        "applinks:cozzyland.net"
+      ],
       "infoPlist": {
         "NFCReaderUsageDescription": "Jukesats uses NFC to detect tap points at cafes.",
         "ITSAppUsesNonExemptEncryption": false
@@ -40,7 +42,10 @@
               "pathPrefix": "/tap"
             }
           ],
-          "category": ["BROWSABLE", "DEFAULT"]
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
         }
       ]
     },
@@ -48,7 +53,13 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Jukesats needs your camera to scan QR codes for sending sats."
+        }
+      ]
     ]
   }
 }

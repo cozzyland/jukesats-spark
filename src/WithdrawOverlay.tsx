@@ -24,6 +24,8 @@ type WithdrawStep =
 type Props = {
   balance: number
   onClose: () => void
+  initialAddress?: string
+  initialAmount?: number
 }
 
 // --- Validation ---
@@ -51,10 +53,15 @@ function validateAmount(input: string, balance: number): string | null {
 
 // --- Component ---
 
-export function WithdrawOverlay({ balance, onClose }: Props) {
-  const [current, setCurrent] = useState<WithdrawStep>({ step: 'form' })
-  const [addressInput, setAddressInput] = useState('')
-  const [amountInput, setAmountInput] = useState('')
+export function WithdrawOverlay({ balance, onClose, initialAddress, initialAmount }: Props) {
+  const prefilled = !!(initialAddress && initialAmount)
+  const [current, setCurrent] = useState<WithdrawStep>(
+    prefilled
+      ? { step: 'confirm', address: initialAddress, amount: initialAmount }
+      : { step: 'form' }
+  )
+  const [addressInput, setAddressInput] = useState(initialAddress ?? '')
+  const [amountInput, setAmountInput] = useState(initialAmount ? String(initialAmount) : '')
   const [validationError, setValidationError] = useState('')
   const mountedRef = useRef(true)
 
@@ -126,7 +133,7 @@ export function WithdrawOverlay({ balance, onClose }: Props) {
       <View style={styles.content}>
         {current.step === 'form' && (
           <>
-            <Text style={styles.title}>Withdraw</Text>
+            <Text style={styles.title}>Send</Text>
 
             <Text style={styles.label}>Recipient ARK address</Text>
             <TextInput

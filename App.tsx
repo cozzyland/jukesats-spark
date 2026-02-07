@@ -6,13 +6,14 @@ import {
   ActivityIndicator,
   Pressable,
   Animated,
-  Share,
 } from 'react-native'
 import { StatusBar } from 'expo-status-bar'
 import * as SplashScreen from 'expo-splash-screen'
 import * as Linking from 'expo-linking'
 import { initWallet, getAddress, getWallet, getCachedAddress } from './src/wallet'
 import { WithdrawOverlay } from './src/WithdrawOverlay'
+import { QRReceiveScreen } from './src/QRReceiveScreen'
+import { QRSendScreen } from './src/QRSendScreen'
 
 const API_URL = 'https://jukesats-server.fly.dev'
 const REWARD_SATS = 330
@@ -81,7 +82,12 @@ async function submitTap(
 export default function App() {
   const [state, setState] = useState<AppState>({ kind: 'loading' })
   const [fadeAnim] = useState(() => new Animated.Value(0))
-  const [withdrawOpen, setWithdrawOpen] = useState(false)
+  const [overlay, setOverlay] = useState<
+    | null
+    | { kind: 'receive' }
+    | { kind: 'scan' }
+    | { kind: 'send'; address: string; amount: number | null }
+  >(null)
 
   // Cold start
   useEffect(() => {
@@ -94,8 +100,8 @@ export default function App() {
       if (state.kind === 'loading') return
       const tap = parseDeepLink(url)
       if (tap) {
-        // Close withdraw overlay if open — tap takes priority
-        setWithdrawOpen(false)
+        // Close any overlay — tap takes priority
+        setOverlay(null)
         handleTap(tap.venueId, tap.tagId)
       }
     })
@@ -290,6 +296,10 @@ export default function App() {
     <View style={styles.container}>
       <Text style={styles.logo}>Jukesats</Text>
 
+      <Pressable style={styles.tapButton}>
+        <Text style={styles.tapButtonText}>Tap for Sats</Text>
+      </Pressable>
+
       <View style={styles.balanceContainer}>
         <Text style={styles.balanceLabel}>Balance</Text>
         <Pressable onPress={refreshBalance}>
@@ -299,27 +309,20 @@ export default function App() {
         </Pressable>
       </View>
 
-      <Text style={styles.address} numberOfLines={1} ellipsizeMode="middle">
-        {address}
-      </Text>
-
-      <Pressable
-        style={styles.receiveButton}
-        onPress={() => Share.share({ message: address })}
-      >
-        <Text style={styles.receiveButtonText}>Receive</Text>
-      </Pressable>
-
-      <Text style={styles.hint}>Tap an NFC tag at a partner cafe to earn sats</Text>
-
-      {balance > 0 && (
+      <View style={styles.actionRow}>
         <Pressable
-          style={styles.withdrawButton}
-          onPress={() => setWithdrawOpen(true)}
+          style={styles.actionButton}
+          onPress={() => setOverlay({ kind: 'scan' })}
         >
-          <Text style={styles.withdrawButtonText}>Withdraw</Text>
+          <Text style={styles.actionButtonText}>Send</Text>
         </Pressable>
-      )}
+        <Pressable
+          style={styles.actionButton}
+          onPress={() => setOverlay({ kind: 'receive' })}
+        >
+          <Text style={styles.actionButtonText}>Receive</Text>
+        </Pressable>
+      </View>
 
       {state.kind === 'tapSuccess' && (
         <Animated.View style={[styles.overlay, { opacity: fadeAnim }]}>
@@ -329,11 +332,29 @@ export default function App() {
         </Animated.View>
       )}
 
-      {withdrawOpen && (
+      {overlay?.kind === 'receive' && (
+        <QRReceiveScreen
+          address={address}
+          onClose={() => setOverlay(null)}
+        />
+      )}
+
+      {overlay?.kind === 'scan' && (
+        <QRSendScreen
+          onScanned={(result) => {
+            setOverlay({ kind: 'send', address: result.address, amount: result.amount })
+          }}
+          onClose={() => setOverlay(null)}
+        />
+      )}
+
+      {overlay?.kind === 'send' && (
         <WithdrawOverlay
           balance={balance}
+          initialAddress={overlay.address}
+          initialAmount={overlay.amount ?? undefined}
           onClose={() => {
-            setWithdrawOpen(false)
+            setOverlay(null)
             refreshBalance()
           }}
         />
@@ -356,7 +377,19 @@ const styles = StyleSheet.create({
     fontSize: 36,
     fontWeight: '800',
     color: '#f7931a',
-    marginBottom: 40,
+    marginBottom: 20,
+  },
+  tapButton: {
+    backgroundColor: '#f7931a',
+    paddingHorizontal: 40,
+    paddingVertical: 16,
+    borderRadius: 12,
+    marginBottom: 32,
+  },
+  tapButtonText: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#000',
   },
   balanceContainer: {
     alignItems: 'center',
@@ -374,39 +407,19 @@ const styles = StyleSheet.create({
     color: '#fff',
     marginTop: 4,
   },
-  address: {
-    fontSize: 12,
-    color: '#555',
-    maxWidth: 280,
+  actionRow: {
+    flexDirection: 'row',
+    gap: 12,
     marginBottom: 12,
   },
-  receiveButton: {
-    borderWidth: 1,
-    borderColor: '#444',
-    paddingHorizontal: 24,
-    paddingVertical: 10,
-    borderRadius: 8,
-    marginBottom: 8,
-  },
-  receiveButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#fff',
-  },
-  hint: {
-    fontSize: 16,
-    color: '#666',
-    textAlign: 'center',
-  },
-  withdrawButton: {
-    marginTop: 24,
+  actionButton: {
     borderWidth: 1,
     borderColor: '#f7931a',
-    paddingHorizontal: 32,
+    paddingHorizontal: 28,
     paddingVertical: 12,
     borderRadius: 8,
   },
-  withdrawButtonText: {
+  actionButtonText: {
     fontSize: 16,
     fontWeight: '600',
     color: '#f7931a',
