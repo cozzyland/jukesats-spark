@@ -260,7 +260,7 @@ app.delete('/admin/tags/:venueId/:tagId', requireAdmin, (req, res) => {
   res.json({ success: true })
 })
 
-type TapSuccess = { success: true; txid: string; amount: number; message: string }
+type TapSuccess = { success: true; txid: string; amount: number; message: string; totalTaps: number }
 type TapFailure = { success: false; status: number; error: string; retryAfterMs?: number }
 type TapResult = TapSuccess | TapFailure
 
@@ -276,7 +276,8 @@ export async function processTap(userArkAddress: string, venueId: string, nfcTag
         success: true,
         txid: existing.txid,
         amount: existing.reward_sats,
-        message: `You earned ${existing.reward_sats} sats!`
+        message: `You earned ${existing.reward_sats} sats!`,
+        totalTaps: tapTracker.getUserTapCount(userArkAddress)
       }
     }
   }
@@ -354,7 +355,8 @@ export async function processTap(userArkAddress: string, venueId: string, nfcTag
       success: true,
       txid,
       amount: rewardSats,
-      message: `You earned ${rewardSats} sats!`
+      message: `You earned ${rewardSats} sats!`,
+      totalTaps: tapTracker.getUserTapCount(userArkAddress)
     }
   } catch (error) {
     tapTracker.failTap(tapId)
@@ -392,12 +394,24 @@ app.post('/tap', async (req, res) => {
 })
 
 /**
- * Get tap stats for a user
+ * Get tap stats for a user (admin — full details)
  */
 app.get('/stats/:userArkAddress', requireAdmin, (req, res) => {
   const { userArkAddress } = req.params
   const stats = tapTracker.getUserStats(userArkAddress, DEFAULT_REWARD_SATS)
   res.json(stats)
+})
+
+/**
+ * Get public tap count for a user (for stamp card)
+ */
+app.get('/user-stats/:userArkAddress', (req, res) => {
+  const { userArkAddress } = req.params
+  if (!ARK_ADDRESS_RE.test(userArkAddress)) {
+    return res.status(400).json({ error: 'Invalid ARK address format' })
+  }
+  const totalTaps = tapTracker.getUserTapCount(userArkAddress)
+  res.json({ totalTaps })
 })
 
 /**

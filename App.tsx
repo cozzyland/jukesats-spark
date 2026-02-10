@@ -8,12 +8,14 @@ import {
   Animated,
 } from 'react-native'
 import { StatusBar } from 'expo-status-bar'
+import { MaterialCommunityIcons } from '@expo/vector-icons'
 import * as SplashScreen from 'expo-splash-screen'
 import * as Linking from 'expo-linking'
 import { initWallet, getAddress, getWallet, getCachedAddress } from './src/wallet'
 import { WithdrawOverlay } from './src/WithdrawOverlay'
 import { QRReceiveScreen } from './src/QRReceiveScreen'
 import { QRSendScreen } from './src/QRSendScreen'
+import { StampCard } from './src/StampCard'
 
 const API_URL = 'https://jukesats-server.fly.dev'
 const REWARD_SATS = 330
@@ -30,7 +32,7 @@ type AppState =
   | { kind: 'error'; message: string }
 
 type TapResult =
-  | { success: true; txid: string; amount: number }
+  | { success: true; txid: string; amount: number; totalTaps?: number }
   | { success: false; error: string; retryAfterMs?: number }
 
 // --- Helpers ---
@@ -81,6 +83,17 @@ async function submitTap(
   return body as TapResult
 }
 
+async function fetchTapCount(userArkAddress: string): Promise<number> {
+  try {
+    const res = await fetch(`${API_URL}/user-stats/${userArkAddress}`)
+    if (!res.ok) return 0
+    const body = await res.json()
+    return typeof body.totalTaps === 'number' ? body.totalTaps : 0
+  } catch {
+    return 0
+  }
+}
+
 // --- App ---
 
 export default function App() {
@@ -92,6 +105,7 @@ export default function App() {
     | { kind: 'scan' }
     | { kind: 'send'; address: string; amount: number | null }
   >(null)
+  const [tapCount, setTapCount] = useState(0)
 
   // Ref to always access latest handleTap without re-subscribing the listener
   const handleTapRef = useRef(handleTap)
@@ -174,7 +188,8 @@ export default function App() {
           const tapResult = await submitTap(addr, tapParams.venueId, tapParams.tagId)
           await handleTapResult(tapResult, addr)
         } else {
-          const balance = await getBalance()
+          const [balance, count] = await Promise.all([getBalance(), fetchTapCount(addr)])
+          setTapCount(count)
           setState({ kind: 'ready', balance, address: addr })
         }
       }
@@ -191,6 +206,7 @@ export default function App() {
   async function handleTapResult(tapResult: TapResult, addr: string) {
     if (tapResult.success) {
       const balance = await getBalance()
+      if (tapResult.totalTaps != null) setTapCount(tapResult.totalTaps)
       setState({
         kind: 'tapSuccess',
         balance,
@@ -214,6 +230,7 @@ export default function App() {
       const result = await submitTap(addr, venueId, tagId)
       if (result.success) {
         const balance = await getBalance()
+        if (result.totalTaps != null) setTapCount(result.totalTaps)
         setState({
           kind: 'tapSuccess',
           balance,
@@ -259,7 +276,10 @@ export default function App() {
   if (state.kind === 'loading') {
     return (
       <View style={styles.container}>
-        <Text style={styles.logo}>Jukesats</Text>
+        <View style={styles.headerRow}>
+          <Text style={styles.logo}>Jukesats</Text>
+          <MaterialCommunityIcons name="contactless-payment" size={28} color="#f7931a" />
+        </View>
         <ActivityIndicator size="large" color="#f7931a" style={{ marginTop: 20 }} />
         <StatusBar style="light" />
       </View>
@@ -269,7 +289,10 @@ export default function App() {
   if (state.kind === 'error') {
     return (
       <View style={styles.container}>
-        <Text style={styles.logo}>Jukesats</Text>
+        <View style={styles.headerRow}>
+          <Text style={styles.logo}>Jukesats</Text>
+          <MaterialCommunityIcons name="contactless-payment" size={28} color="#f7931a" />
+        </View>
         <Text style={styles.errorText}>{state.message}</Text>
         <Pressable style={styles.button} onPress={coldStart}>
           <Text style={styles.buttonText}>Retry</Text>
@@ -282,7 +305,10 @@ export default function App() {
   if (state.kind === 'rateLimited') {
     return (
       <View style={styles.container}>
-        <Text style={styles.logo}>Jukesats</Text>
+        <View style={styles.headerRow}>
+          <Text style={styles.logo}>Jukesats</Text>
+          <MaterialCommunityIcons name="contactless-payment" size={28} color="#f7931a" />
+        </View>
         <Text style={styles.subtitle}>Too fast!</Text>
         <Text style={styles.rateLimit}>
           Try again in {state.retryAfterSeconds}s
@@ -301,11 +327,12 @@ export default function App() {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.logo}>Jukesats</Text>
+      <View style={styles.headerRow}>
+        <Text style={styles.logo}>Jukesats</Text>
+        <MaterialCommunityIcons name="contactless-payment" size={28} color="#f7931a" />
+      </View>
 
-      <Pressable style={styles.tapButton}>
-        <Text style={styles.tapButtonText}>Tap for Sats</Text>
-      </Pressable>
+      <StampCard tapCount={tapCount} />
 
       <View style={styles.balanceContainer}>
         <Text style={styles.balanceLabel}>Balance</Text>
@@ -380,23 +407,16 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     padding: 20,
   },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 20,
+  },
   logo: {
     fontSize: 36,
     fontWeight: '800',
     color: '#f7931a',
-    marginBottom: 20,
-  },
-  tapButton: {
-    backgroundColor: '#f7931a',
-    paddingHorizontal: 40,
-    paddingVertical: 16,
-    borderRadius: 12,
-    marginBottom: 32,
-  },
-  tapButtonText: {
-    fontSize: 20,
-    fontWeight: '800',
-    color: '#000',
   },
   balanceContainer: {
     alignItems: 'center',
