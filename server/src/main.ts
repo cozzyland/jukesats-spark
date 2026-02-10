@@ -124,7 +124,7 @@ function requireAdmin(req: express.Request, res: express.Response, next: express
   next()
 }
 
-const ARK_ADDRESS_RE = /^(t?ark1)[a-z0-9]{20,100}$/
+const ARK_ADDRESS_RE = /^(t?ark1)[a-z0-9]{20,200}$/
 
 /**
  * Get client IP (behind proxy)

@@ -62,7 +62,7 @@ function parseQR(data: string): ScanResult | null {
 }
 
 function looksLikeArkAddress(s: string): boolean {
-  return /^(t?ark1)[a-z0-9]{20,100}$/.test(s)
+  return /^(t?ark1)[a-z0-9]{20,200}$/.test(s)
 }
 
 export function QRSendScreen({ onScanned, onClose }: Props) {
