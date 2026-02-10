@@ -36,6 +36,7 @@ export class TapTracker {
   private stmtListTagsByVenue
   private stmtDeactivateTag
   private stmtTagCount
+  private stmtUserTapCount
   private stmtCleanStalePending
 
   constructor(private db: Database.Database) {
@@ -81,11 +82,11 @@ export class TapTracker {
       SELECT COUNT(*) as totalTaps,
              COALESCE(SUM(reward_sats), 0) as totalRewardsSats,
              MAX(created_at) as lastTap
-      FROM taps WHERE user_ark_address = ?
+      FROM taps WHERE user_ark_address = ? AND status = 'completed'
     `)
 
     this.stmtUserVenues = db.prepare(`
-      SELECT DISTINCT venue_id FROM taps WHERE user_ark_address = ?
+      SELECT DISTINCT venue_id FROM taps WHERE user_ark_address = ? AND status = 'completed'
     `)
 
     this.stmtVenueStats = db.prepare(`
@@ -118,6 +119,10 @@ export class TapTracker {
 
     this.stmtTagCount = db.prepare(`
       SELECT COUNT(*) as count FROM nfc_tags WHERE venue_id = ?
+    `)
+
+    this.stmtUserTapCount = db.prepare(`
+      SELECT COUNT(*) as count FROM taps WHERE user_ark_address = ? AND status = 'completed'
     `)
 
     this.stmtCleanStalePending = db.prepare(`
@@ -222,6 +227,14 @@ export class TapTracker {
       lastTap: stats.lastTap,
       venues: venueRows.map(r => r.venue_id)
     }
+  }
+
+  /**
+   * Get total completed tap count for a user (for stamp card)
+   */
+  getUserTapCount(userArkAddress: string): number {
+    const row = this.stmtUserTapCount.get(userArkAddress) as { count: number }
+    return row.count
   }
 
   /**
