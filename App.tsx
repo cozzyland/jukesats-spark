@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import {
   StyleSheet,
   Text,
@@ -74,7 +74,11 @@ async function submitTap(
   if (!res.ok) {
     return { success: false, error: `Tap failed: ${res.status}` }
   }
-  return res.json()
+  const body = await res.json().catch(() => null)
+  if (!body || typeof body.success !== 'boolean') {
+    return { success: false, error: 'Unexpected server response' }
+  }
+  return body as TapResult
 }
 
 // --- App ---
@@ -89,6 +93,10 @@ export default function App() {
     | { kind: 'send'; address: string; amount: number | null }
   >(null)
 
+  // Ref to always access latest handleTap without re-subscribing the listener
+  const handleTapRef = useRef(handleTap)
+  handleTapRef.current = handleTap
+
   // Cold start
   useEffect(() => {
     coldStart()
@@ -97,16 +105,15 @@ export default function App() {
   // Listen for warm deep links (app already open)
   useEffect(() => {
     const sub = Linking.addEventListener('url', ({ url }) => {
-      if (state.kind === 'loading') return
       const tap = parseDeepLink(url)
       if (tap) {
         // Close any overlay — tap takes priority
         setOverlay(null)
-        handleTap(tap.venueId, tap.tagId)
+        handleTapRef.current(tap.venueId, tap.tagId)
       }
     })
     return () => sub.remove()
-  }, [state.kind])
+  }, [])
 
   // Animate tap success overlay
   useEffect(() => {

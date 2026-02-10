@@ -36,6 +36,7 @@ export class TapTracker {
   private stmtListTagsByVenue
   private stmtDeactivateTag
   private stmtTagCount
+  private stmtCleanStalePending
 
   constructor(private db: Database.Database) {
     this.stmtInsert = db.prepare(`
@@ -116,7 +117,11 @@ export class TapTracker {
     `)
 
     this.stmtTagCount = db.prepare(`
-      SELECT COUNT(*) as count FROM nfc_tags
+      SELECT COUNT(*) as count FROM nfc_tags WHERE venue_id = ?
+    `)
+
+    this.stmtCleanStalePending = db.prepare(`
+      UPDATE taps SET status = 'failed' WHERE status = 'pending' AND created_at < ?
     `)
   }
 
@@ -238,8 +243,8 @@ export class TapTracker {
    * Returns true if no tags are registered (open mode) or if the tag is valid.
    */
   isValidTag(tagId: string, venueId: string): boolean {
-    const tagCount = this.stmtTagCount.get() as { count: number }
-    if (tagCount.count === 0) return true // No tags registered = open mode
+    const tagCount = this.stmtTagCount.get(venueId) as { count: number }
+    if (tagCount.count === 0) return true // No tags registered for this venue = open mode
     return !!this.stmtFindActiveTag.get(tagId, venueId)
   }
 
@@ -265,5 +270,18 @@ export class TapTracker {
   deactivateTag(tagId: string, venueId: string): boolean {
     const result = this.stmtDeactivateTag.run(tagId, venueId)
     return result.changes > 0
+  }
+
+  /**
+   * Mark stale pending taps as failed (reconciliation on startup).
+   * Taps pending for more than the threshold are considered abandoned.
+   */
+  cleanStalePendingTaps(maxAgeMs: number = 5 * 60 * 1000): number {
+    const cutoff = Date.now() - maxAgeMs
+    const result = this.stmtCleanStalePending.run(cutoff)
+    if (result.changes > 0) {
+      console.warn(`[TapTracker] Cleaned ${result.changes} stale pending taps`)
+    }
+    return result.changes
   }
 }
