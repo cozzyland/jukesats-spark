@@ -59,6 +59,7 @@ app.get('/tap', (req, res) => {
 // SQLite database + tap tracker
 const db = createDb()
 export const tapTracker = new TapTracker(db)
+tapTracker.cleanStalePendingTaps()
 
 // Per-user mutex for serializing tap processing without cross-user blocking
 class MutexMap {
@@ -122,6 +123,8 @@ function requireAdmin(req: express.Request, res: express.Response, next: express
 
   next()
 }
+
+const ARK_ADDRESS_RE = /^(t?ark1)[a-z0-9]{20,100}$/
 
 /**
  * Get client IP (behind proxy)
@@ -257,14 +260,18 @@ app.delete('/admin/tags/:venueId/:tagId', requireAdmin, (req, res) => {
   res.json({ success: true })
 })
 
+type TapSuccess = { success: true; txid: string; amount: number; message: string }
+type TapFailure = { success: false; status: number; error: string; retryAfterMs?: number }
+type TapResult = TapSuccess | TapFailure
+
 /**
  * Core tap processing logic with mutex for concurrency control
  */
-export async function processTap(userArkAddress: string, venueId: string, nfcTagId: string, ip: string, idempotencyKey?: string) {
+export async function processTap(userArkAddress: string, venueId: string, nfcTagId: string, ip: string, idempotencyKey?: string): Promise<TapResult> {
   // Check idempotency key before acquiring mutex
   if (idempotencyKey) {
     const existing = tapTracker.findByIdempotencyKey(idempotencyKey)
-    if (existing && existing.status === 'completed') {
+    if (existing && existing.status === 'completed' && existing.txid) {
       return {
         success: true,
         txid: existing.txid,
@@ -366,7 +373,7 @@ app.post('/tap', async (req, res) => {
     return res.status(400).json({ error: 'Missing required fields' })
   }
 
-  if (!userArkAddress.startsWith('tark1') && !userArkAddress.startsWith('ark1')) {
+  if (!ARK_ADDRESS_RE.test(userArkAddress)) {
     return res.status(400).json({ error: 'Invalid ARK address format' })
   }
 
@@ -409,7 +416,7 @@ app.post('/simulate-tap', async (req, res) => {
     return res.status(400).json({ error: 'userArkAddress required' })
   }
 
-  if (!userArkAddress.startsWith('tark1') && !userArkAddress.startsWith('ark1')) {
+  if (!ARK_ADDRESS_RE.test(userArkAddress)) {
     return res.status(400).json({ error: 'Invalid ARK address format' })
   }
 
@@ -423,6 +430,12 @@ app.post('/simulate-tap', async (req, res) => {
     console.error('[Simulate Tap] Error:', error)
     res.status(500).json({ error: 'Failed to process tap' })
   }
+})
+
+// Global error handler — prevents stack trace leakage
+app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  console.error('[Server] Unhandled error:', err)
+  res.status(500).json({ error: 'Internal server error' })
 })
 
 // Initialize and start

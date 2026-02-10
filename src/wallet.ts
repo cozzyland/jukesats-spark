@@ -15,7 +15,10 @@ let initPromise: Promise<string> | null = null
 /** Initialize wallet. Safe to call concurrently — deduplicates via shared promise. */
 export function initWallet(): Promise<string> {
   if (!initPromise) {
-    initPromise = doInit()
+    initPromise = doInit().catch((error) => {
+      initPromise = null
+      throw error
+    })
   }
   return initPromise
 }

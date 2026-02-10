@@ -14,8 +14,11 @@ export function createDb(dbPath: string = DB_PATH): Database.Database {
     const columns = db.pragma('table_info(taps)') as { name: string }[]
     const columnNames = new Set(columns.map(c => c.name))
     if (!columnNames.has('user_ark_address')) {
-      // Old table with incompatible schema — drop and recreate
-      db.exec(`DROP TABLE taps`)
+      // Old table with incompatible schema — rename to backup instead of dropping
+      const rowCount = (db.prepare(`SELECT COUNT(*) as count FROM taps`).get() as { count: number }).count
+      const backupName = `taps_backup_${Date.now()}`
+      console.warn(`[DB] Incompatible taps table (${rowCount} rows) — renaming to ${backupName}`)
+      db.exec(`ALTER TABLE taps RENAME TO ${backupName}`)
     }
   }
 

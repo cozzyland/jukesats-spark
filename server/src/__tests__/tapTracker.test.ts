@@ -100,6 +100,7 @@ describe('TapTracker', () => {
 
     it('rejects tag registered for different venue', () => {
       tracker.registerTag('tag-abc', 'venue-1')
+      tracker.registerTag('tag-xyz', 'venue-2') // venue-2 has its own tags, so it enforces validation
       expect(tracker.isValidTag('tag-abc', 'venue-2')).toBe(false)
     })
 

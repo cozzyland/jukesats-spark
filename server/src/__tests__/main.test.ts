@@ -70,7 +70,7 @@ describe('Server endpoints', () => {
     it('rejects unknown venue', async () => {
       const res = await request(app)
         .post('/tap')
-        .send({ userArkAddress: 'tark1user1', venueId: 'unknown-venue', nfcTagId: 'admin-test-tag' })
+        .send({ userArkAddress: 'tark1useraabbccddeeffgghhii', venueId: 'unknown-venue', nfcTagId: 'admin-test-tag' })
       expect(res.status).toBe(400)
       expect(res.body.error).toContain('Unknown venue')
     })
@@ -78,7 +78,7 @@ describe('Server endpoints', () => {
     it('processes valid tap', async () => {
       const res = await request(app)
         .post('/tap')
-        .send({ userArkAddress: 'tark1newtestuser', venueId: 'venue-1', nfcTagId: 'admin-test-tag' })
+        .send({ userArkAddress: 'tark1newtestuserabcdefghi', venueId: 'venue-1', nfcTagId: 'admin-test-tag' })
       expect(res.status).toBe(200)
       expect(res.body.success).toBe(true)
       expect(res.body.txid).toBe('mocktxid123')
@@ -232,8 +232,8 @@ describe('Server endpoints', () => {
     })
 
     it('allows different users to tap concurrently (both 200)', async () => {
-      const addr1 = 'tark1parallel1_' + Date.now()
-      const addr2 = 'tark1parallel2_' + Date.now()
+      const addr1 = 'tark1parallelonea' + Date.now()
+      const addr2 = 'tark1paralleltwoa' + Date.now()
 
       const [res1, res2] = await Promise.all([
         request(app).post('/tap').send({ userArkAddress: addr1, venueId: 'venue-1', nfcTagId: 'admin-test-tag' }),
