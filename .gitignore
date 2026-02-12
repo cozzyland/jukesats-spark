@@ -45,3 +45,6 @@ yarn-error.*
 server/node_modules/
 server/dist/
 server/data/
+
+# build artifacts
+build/
