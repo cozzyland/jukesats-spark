@@ -334,13 +334,20 @@ export default function App() {
 
       <StampCard tapCount={tapCount} />
 
+      {tapCount > 0 && (
+        <Text style={styles.totalEarned}>
+          Earned: {(tapCount * REWARD_SATS).toLocaleString()} sats from {tapCount} taps
+        </Text>
+      )}
+
       <View style={styles.balanceContainer}>
-        <Text style={styles.balanceLabel}>Balance</Text>
+        <Text style={styles.balanceLabel}>Your Sats</Text>
         <Pressable onPress={refreshBalance}>
           <Text style={styles.balanceValue}>
             {balance.toLocaleString()} sats
           </Text>
         </Pressable>
+        <Text style={styles.balanceSubtitle}>spend, send, or stack</Text>
       </View>
 
       <View style={styles.actionRow}>
@@ -418,6 +425,11 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: '#f7931a',
   },
+  totalEarned: {
+    fontSize: 13,
+    color: '#666',
+    marginBottom: 16,
+  },
   balanceContainer: {
     alignItems: 'center',
     marginBottom: 20,
@@ -433,6 +445,12 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#fff',
     marginTop: 4,
+  },
+  balanceSubtitle: {
+    fontSize: 12,
+    color: '#666',
+    marginTop: 4,
+    letterSpacing: 1,
   },
   actionRow: {
     flexDirection: 'row',
