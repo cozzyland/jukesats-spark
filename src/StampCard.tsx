@@ -10,6 +10,7 @@ const TOTAL_STAMPS = 10
 
 export function StampCard({ tapCount }: StampCardProps) {
   const filled = tapCount % TOTAL_STAMPS
+  const isComplete = tapCount > 0 && filled === 0
   const prevCountRef = useRef(tapCount)
   const bounceAnim = useRef(new Animated.Value(1)).current
 
@@ -29,8 +30,8 @@ export function StampCard({ tapCount }: StampCardProps) {
 
   const stamps = []
   for (let i = 0; i < TOTAL_STAMPS; i++) {
-    const isFilled = i < filled
-    const isLatest = isFilled && i === filled - 1 && tapCount > 0
+    const isFilled = isComplete || i < filled
+    const isLatest = !isComplete && isFilled && i === filled - 1 && tapCount > 0
 
     stamps.push(
       <Animated.View
@@ -50,12 +51,14 @@ export function StampCard({ tapCount }: StampCardProps) {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.label}>TAP CARD</Text>
+      <Text style={styles.label}>COFFEE CARD</Text>
       <View style={styles.grid}>
         <View style={styles.row}>{stamps.slice(0, 5)}</View>
         <View style={styles.row}>{stamps.slice(5, 10)}</View>
       </View>
-      <Text style={styles.counter}>{filled}/{TOTAL_STAMPS}</Text>
+      <Text style={[styles.counter, isComplete && styles.counterComplete]}>
+        {isComplete ? 'Coffee earned!' : `${filled}/${TOTAL_STAMPS} visits`}
+      </Text>
     </View>
   )
 }
@@ -104,5 +107,9 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#888',
     marginTop: 12,
+  },
+  counterComplete: {
+    color: '#f7931a',
+    fontWeight: '700',
   },
 })
