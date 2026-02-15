@@ -16,9 +16,50 @@ import { WithdrawOverlay } from './src/WithdrawOverlay'
 import { QRReceiveScreen } from './src/QRReceiveScreen'
 import { QRSendScreen } from './src/QRSendScreen'
 import { StampCard } from './src/StampCard'
+import { CoffeeIndicator } from './src/CoffeeIndicator'
+import { EducationalOverlay } from './src/EducationalOverlay'
 
 const API_URL = 'https://jukesats-server.fly.dev'
 const REWARD_SATS = 330
+
+// --- Educational Content ---
+
+type TooltipKey = 'coffee' | 'stack' | 'send' | 'jukebox'
+
+const TOOLTIPS: Record<TooltipKey, { title: string; content: string[] }> = {
+  coffee: {
+    title: "You're spending real Bitcoin.",
+    content: [
+      "This isn't a loyalty card trick \u2014 when you buy a coffee, you're sending actual Bitcoin (sats) from your wallet to the cafe's wallet.",
+      "The same technology that moves millions across borders is buying your flat white. That's Bitcoin.",
+    ],
+  },
+  stack: {
+    title: 'Why saving in Bitcoin beats saving in dollars.',
+    content: [
+      'Argentina (extreme): A coffee cost 100 pesos in 2020. The same coffee costs 2,500+ pesos in 2026. Your pesos bought 25x less coffee in 6 years.',
+      'US/Europe (moderate): A $5 coffee in 2020 costs ~$7 in 2026. Your dollars buy ~30% less coffee.',
+      'Bitcoin: 10,000 sats bought a coffee in 2020. Those same 10,000 sats could buy 3+ coffees today. Your sats bought MORE coffee over time.',
+      'Every sat you stack today could buy more tomorrow. That\'s the Bitcoin savings thesis.',
+    ],
+  },
+  send: {
+    title: 'Your sats. Your choice.',
+    content: [
+      "Send to a friend's ARK wallet, move to your own hardware wallet, or pay for anything that accepts Bitcoin.",
+      "Unlike loyalty points locked to one app, your sats work everywhere on the Bitcoin network.",
+      'Coming soon: Lightning Network and on-chain Bitcoin sends.',
+    ],
+  },
+  jukebox: {
+    title: 'The Jukesats Jukebox.',
+    content: [
+      'Spend real Bitcoin to pick songs on the music player at your table. Skip the queue, play your favorite track, tip the playlist.',
+      "Your sats aren't just money \u2014 they're your voice in the room.",
+      'Coming soon.',
+    ],
+  },
+}
 
 SplashScreen.preventAutoHideAsync()
 
@@ -106,6 +147,7 @@ export default function App() {
     | { kind: 'send'; address: string; amount: number | null }
   >(null)
   const [tapCount, setTapCount] = useState(0)
+  const [tooltip, setTooltip] = useState<TooltipKey | null>(null)
 
   // Ref to always access latest handleTap without re-subscribing the listener
   const handleTapRef = useRef(handleTap)
@@ -350,20 +392,66 @@ export default function App() {
         <Text style={styles.balanceSubtitle}>spend, send, or stack</Text>
       </View>
 
-      <View style={styles.actionRow}>
+      <CoffeeIndicator
+        balance={balance}
+        onBuyCoffee={() => setOverlay({ kind: 'scan' })}
+        onInfo={() => setTooltip('coffee')}
+      />
+
+      <View style={styles.actionGrid}>
         <Pressable
-          style={styles.actionButton}
+          style={styles.gridButton}
           onPress={() => setOverlay({ kind: 'scan' })}
         >
-          <Text style={styles.actionButtonText}>Send</Text>
+          <MaterialCommunityIcons name="send" size={24} color="#f7931a" />
+          <Text style={styles.gridButtonLabel}>Send</Text>
+          <Pressable
+            style={styles.tooltipIcon}
+            onPress={() => setTooltip('send')}
+            hitSlop={8}
+          >
+            <MaterialCommunityIcons name="help-circle-outline" size={16} color="#666" />
+          </Pressable>
         </Pressable>
+
         <Pressable
-          style={styles.actionButton}
-          onPress={() => setOverlay({ kind: 'receive' })}
+          style={styles.gridButton}
+          onPress={() => setTooltip('stack')}
         >
-          <Text style={styles.actionButtonText}>Receive</Text>
+          <MaterialCommunityIcons name="piggy-bank" size={24} color="#f7931a" />
+          <Text style={styles.gridButtonLabel}>Stack</Text>
+          <Pressable
+            style={styles.tooltipIcon}
+            onPress={() => setTooltip('stack')}
+            hitSlop={8}
+          >
+            <MaterialCommunityIcons name="help-circle-outline" size={16} color="#666" />
+          </Pressable>
+        </Pressable>
+
+        <Pressable
+          style={styles.gridButton}
+          onPress={() => setTooltip('jukebox')}
+        >
+          <MaterialCommunityIcons name="music-note" size={24} color="#f7931a" />
+          <Text style={styles.gridButtonLabel}>Jukebox</Text>
+          <Pressable
+            style={styles.tooltipIcon}
+            onPress={() => setTooltip('jukebox')}
+            hitSlop={8}
+          >
+            <MaterialCommunityIcons name="help-circle-outline" size={16} color="#666" />
+          </Pressable>
         </Pressable>
       </View>
+
+      <Pressable
+        style={styles.receiveButton}
+        onPress={() => setOverlay({ kind: 'receive' })}
+      >
+        <MaterialCommunityIcons name="qrcode" size={18} color="#000" />
+        <Text style={styles.receiveButtonText}>Receive</Text>
+      </Pressable>
 
       {state.kind === 'tapSuccess' && (
         <Animated.View style={[styles.overlay, { opacity: fadeAnim }]}>
@@ -398,6 +486,14 @@ export default function App() {
             setOverlay(null)
             refreshBalance()
           }}
+        />
+      )}
+
+      {tooltip && (
+        <EducationalOverlay
+          title={TOOLTIPS[tooltip].title}
+          content={TOOLTIPS[tooltip].content}
+          onClose={() => setTooltip(null)}
         />
       )}
 
@@ -452,22 +548,45 @@ const styles = StyleSheet.create({
     marginTop: 4,
     letterSpacing: 1,
   },
-  actionRow: {
+  actionGrid: {
     flexDirection: 'row',
     gap: 12,
-    marginBottom: 12,
+    marginBottom: 16,
   },
-  actionButton: {
+  gridButton: {
+    flex: 1,
+    alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#f7931a',
+    borderColor: '#222',
+    borderRadius: 12,
+    paddingVertical: 16,
+    paddingHorizontal: 8,
+    gap: 6,
+  },
+  gridButtonLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#ccc',
+  },
+  tooltipIcon: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+  },
+  receiveButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#f7931a',
     paddingHorizontal: 28,
     paddingVertical: 12,
     borderRadius: 8,
+    marginBottom: 12,
   },
-  actionButtonText: {
+  receiveButtonText: {
     fontSize: 16,
-    fontWeight: '600',
-    color: '#f7931a',
+    fontWeight: '700',
+    color: '#000',
   },
   overlay: {
     position: 'absolute',
