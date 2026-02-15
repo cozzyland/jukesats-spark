@@ -15,7 +15,6 @@ import { initWallet, getAddress, getWallet, getCachedAddress } from './src/walle
 import { WithdrawOverlay } from './src/WithdrawOverlay'
 import { QRReceiveScreen } from './src/QRReceiveScreen'
 import { QRSendScreen } from './src/QRSendScreen'
-import { StampCard } from './src/StampCard'
 import { CoffeeIndicator } from './src/CoffeeIndicator'
 import { EducationalOverlay } from './src/EducationalOverlay'
 
@@ -24,9 +23,17 @@ const REWARD_SATS = 330
 
 // --- Educational Content ---
 
-type TooltipKey = 'coffee' | 'stack' | 'send' | 'jukebox'
+type TooltipKey = 'sats' | 'coffee' | 'stack' | 'send' | 'jukebox'
 
 const TOOLTIPS: Record<TooltipKey, { title: string; content: string[] }> = {
+  sats: {
+    title: 'What are sats?',
+    content: [
+      'Sats (short for satoshis) are the smallest unit of Bitcoin. 1 Bitcoin = 100,000,000 sats.',
+      "Think of sats like cents to a dollar \u2014 except there will only ever be 21 million Bitcoin. No government can print more.",
+      'Every time you tap an NFC tag at the cafe, you earn real sats. They\'re yours \u2014 not loyalty points, not tokens. Real Bitcoin you can spend, save, or send anywhere.',
+    ],
+  },
   coffee: {
     title: "You're spending real Bitcoin.",
     content: [
@@ -374,84 +381,52 @@ export default function App() {
         <MaterialCommunityIcons name="contactless-payment" size={28} color="#f7931a" />
       </View>
 
-      <StampCard tapCount={tapCount} />
-
-      {tapCount > 0 && (
-        <Text style={styles.totalEarned}>
-          Earned: {(tapCount * REWARD_SATS).toLocaleString()} sats from {tapCount} taps
-        </Text>
-      )}
-
-      <View style={styles.balanceContainer}>
-        <Text style={styles.balanceLabel}>Your Sats</Text>
-        <Pressable onPress={refreshBalance}>
-          <Text style={styles.balanceValue}>
-            {balance.toLocaleString()} sats
-          </Text>
-        </Pressable>
-        <Text style={styles.balanceSubtitle}>spend, send, or stack</Text>
-      </View>
-
       <CoffeeIndicator
         balance={balance}
         onBuyCoffee={() => setOverlay({ kind: 'scan' })}
-        onInfo={() => setTooltip('coffee')}
       />
 
-      <View style={styles.actionGrid}>
+      <Pressable style={styles.balanceContainer} onPress={() => setTooltip('sats')}>
+        <Text style={styles.balanceValue}>
+          {balance.toLocaleString()} sats
+        </Text>
+      </Pressable>
+
+      <View style={styles.actionRow}>
         <Pressable
-          style={styles.gridButton}
+          style={styles.primaryButton}
           onPress={() => setOverlay({ kind: 'scan' })}
         >
-          <MaterialCommunityIcons name="send" size={24} color="#f7931a" />
-          <Text style={styles.gridButtonLabel}>Send</Text>
-          <Pressable
-            style={styles.tooltipIcon}
-            onPress={() => setTooltip('send')}
-            hitSlop={8}
-          >
-            <MaterialCommunityIcons name="help-circle-outline" size={16} color="#666" />
-          </Pressable>
+          <MaterialCommunityIcons name="send" size={18} color="#000" />
+          <Text style={styles.primaryButtonText}>Send</Text>
         </Pressable>
-
         <Pressable
-          style={styles.gridButton}
-          onPress={() => setTooltip('stack')}
+          style={styles.primaryButton}
+          onPress={() => setOverlay({ kind: 'receive' })}
         >
-          <MaterialCommunityIcons name="piggy-bank" size={24} color="#f7931a" />
-          <Text style={styles.gridButtonLabel}>Stack</Text>
-          <Pressable
-            style={styles.tooltipIcon}
-            onPress={() => setTooltip('stack')}
-            hitSlop={8}
-          >
-            <MaterialCommunityIcons name="help-circle-outline" size={16} color="#666" />
-          </Pressable>
-        </Pressable>
-
-        <Pressable
-          style={styles.gridButton}
-          onPress={() => setTooltip('jukebox')}
-        >
-          <MaterialCommunityIcons name="music-note" size={24} color="#f7931a" />
-          <Text style={styles.gridButtonLabel}>Jukebox</Text>
-          <Pressable
-            style={styles.tooltipIcon}
-            onPress={() => setTooltip('jukebox')}
-            hitSlop={8}
-          >
-            <MaterialCommunityIcons name="help-circle-outline" size={16} color="#666" />
-          </Pressable>
+          <MaterialCommunityIcons name="qrcode" size={18} color="#000" />
+          <Text style={styles.primaryButtonText}>Receive</Text>
         </Pressable>
       </View>
 
-      <Pressable
-        style={styles.receiveButton}
-        onPress={() => setOverlay({ kind: 'receive' })}
-      >
-        <MaterialCommunityIcons name="qrcode" size={18} color="#000" />
-        <Text style={styles.receiveButtonText}>Receive</Text>
-      </Pressable>
+      <Text style={styles.orText}>OR</Text>
+
+      <View style={styles.actionRow}>
+        <Pressable
+          style={styles.secondaryButton}
+          onPress={() => setTooltip('stack')}
+        >
+          <MaterialCommunityIcons name="piggy-bank" size={18} color="#f7931a" />
+          <Text style={styles.secondaryButtonText}>Just stack (save)</Text>
+        </Pressable>
+        <Pressable
+          style={styles.secondaryButton}
+          onPress={() => setTooltip('jukebox')}
+        >
+          <MaterialCommunityIcons name="music-note" size={18} color="#f7931a" />
+          <Text style={styles.secondaryButtonText}>Jukebox</Text>
+        </Pressable>
+      </View>
 
       {state.kind === 'tapSuccess' && (
         <Animated.View style={[styles.overlay, { opacity: fadeAnim }]}>
@@ -521,72 +496,56 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: '#f7931a',
   },
-  totalEarned: {
-    fontSize: 13,
-    color: '#666',
-    marginBottom: 16,
-  },
   balanceContainer: {
     alignItems: 'center',
-    marginBottom: 20,
-  },
-  balanceLabel: {
-    fontSize: 14,
-    color: '#888',
-    textTransform: 'uppercase',
-    letterSpacing: 2,
+    marginBottom: 24,
   },
   balanceValue: {
     fontSize: 48,
     fontWeight: '700',
     color: '#fff',
-    marginTop: 4,
   },
-  balanceSubtitle: {
-    fontSize: 12,
-    color: '#666',
-    marginTop: 4,
-    letterSpacing: 1,
-  },
-  actionGrid: {
+  actionRow: {
     flexDirection: 'row',
     gap: 12,
-    marginBottom: 16,
+    width: '100%',
   },
-  gridButton: {
+  primaryButton: {
     flex: 1,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#222',
-    borderRadius: 12,
-    paddingVertical: 16,
-    paddingHorizontal: 8,
-    gap: 6,
-  },
-  gridButtonLabel: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#ccc',
-  },
-  tooltipIcon: {
-    position: 'absolute',
-    top: 6,
-    right: 6,
-  },
-  receiveButton: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     gap: 6,
     backgroundColor: '#f7931a',
-    paddingHorizontal: 28,
-    paddingVertical: 12,
+    paddingVertical: 14,
     borderRadius: 8,
-    marginBottom: 12,
   },
-  receiveButtonText: {
+  primaryButtonText: {
     fontSize: 16,
     fontWeight: '700',
     color: '#000',
+  },
+  orText: {
+    fontSize: 13,
+    color: '#555',
+    fontWeight: '600',
+    marginVertical: 12,
+  },
+  secondaryButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    borderWidth: 1,
+    borderColor: '#333',
+    paddingVertical: 14,
+    borderRadius: 8,
+  },
+  secondaryButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#f7931a',
   },
   overlay: {
     position: 'absolute',
