@@ -51,11 +51,12 @@ const TOOLTIPS: Record<TooltipKey, { title: string; content: string[] }> = {
     ],
   },
   send: {
-    title: 'Your sats. Your choice.',
+    title: 'Your real Bitcoin wallet.',
     content: [
-      "Send to a friend's ARK wallet, move to your own hardware wallet, or pay for anything that accepts Bitcoin.",
-      "Unlike loyalty points locked to one app, your sats work everywhere on the Bitcoin network.",
-      'Coming soon: Lightning Network and on-chain Bitcoin sends.',
+      "This is a Layer 2 (L2) Bitcoin wallet. Your sats are real Bitcoin — not tokens, not IOUs.",
+      "Layer 2 means faster, cheaper transactions while still being secured by the Bitcoin network.",
+      "Send to a friend's wallet, move to your own hardware wallet, or pay for anything that accepts Bitcoin.",
+      'Unlike loyalty points locked to one app, your sats work everywhere on the Bitcoin network.',
     ],
   },
   jukebox: {
@@ -325,10 +326,7 @@ export default function App() {
   if (state.kind === 'loading') {
     return (
       <View style={styles.container}>
-        <View style={styles.headerRow}>
-          <Text style={styles.logo}>Jukesats</Text>
-          <MaterialCommunityIcons name="contactless-payment" size={28} color="#f7931a" />
-        </View>
+        <Text style={styles.headerText}>Tap for Bitcoin(Sats)!</Text>
         <ActivityIndicator size="large" color="#f7931a" style={{ marginTop: 20 }} />
         <StatusBar style="light" />
       </View>
@@ -338,10 +336,7 @@ export default function App() {
   if (state.kind === 'error') {
     return (
       <View style={styles.container}>
-        <View style={styles.headerRow}>
-          <Text style={styles.logo}>Jukesats</Text>
-          <MaterialCommunityIcons name="contactless-payment" size={28} color="#f7931a" />
-        </View>
+        <Text style={styles.headerText}>Tap for Bitcoin(Sats)!</Text>
         <Text style={styles.errorText}>{state.message}</Text>
         <Pressable style={styles.button} onPress={coldStart}>
           <Text style={styles.buttonText}>Retry</Text>
@@ -354,10 +349,7 @@ export default function App() {
   if (state.kind === 'rateLimited') {
     return (
       <View style={styles.container}>
-        <View style={styles.headerRow}>
-          <Text style={styles.logo}>Jukesats</Text>
-          <MaterialCommunityIcons name="contactless-payment" size={28} color="#f7931a" />
-        </View>
+        <Text style={styles.headerText}>Tap for Bitcoin(Sats)!</Text>
         <Text style={styles.subtitle}>Too fast!</Text>
         <Text style={styles.rateLimit}>
           Try again in {state.retryAfterSeconds}s
@@ -376,55 +368,64 @@ export default function App() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.headerRow}>
-        <Text style={styles.logo}>Jukesats</Text>
-        <MaterialCommunityIcons name="contactless-payment" size={28} color="#f7931a" />
-      </View>
+      {/* Header */}
+      <Pressable style={styles.headerRow} onPress={() => setTooltip('sats')}>
+        <Text style={styles.headerText}>Tap for Bitcoin(Sats)!</Text>
+        <MaterialCommunityIcons name="information-outline" size={20} color="#f7931a" />
+      </Pressable>
 
       <CoffeeIndicator
         balance={balance}
         onBuyCoffee={() => setOverlay({ kind: 'scan' })}
       />
 
-      <Pressable style={styles.balanceContainer} onPress={() => setTooltip('sats')}>
+      {/* Balance */}
+      <View style={styles.balanceContainer}>
         <Text style={styles.balanceValue}>
           {balance.toLocaleString()} sats
         </Text>
-      </Pressable>
+      </View>
 
+      {/* Use your bitcoin */}
+      <Text style={styles.sectionLabel}>Use your bitcoin</Text>
       <View style={styles.actionRow}>
         <Pressable
-          style={styles.primaryButton}
-          onPress={() => setOverlay({ kind: 'scan' })}
+          style={styles.orangeButton}
+          onPress={() => setTooltip('jukebox')}
         >
-          <MaterialCommunityIcons name="send" size={18} color="#000" />
-          <Text style={styles.primaryButtonText}>Send</Text>
+          <MaterialCommunityIcons name="music-note" size={18} color="#000" />
+          <Text style={styles.orangeButtonText}>JukeSats</Text>
         </Pressable>
         <Pressable
-          style={styles.primaryButton}
-          onPress={() => setOverlay({ kind: 'receive' })}
+          style={styles.orangeButton}
+          onPress={() => setTooltip('stack')}
         >
-          <MaterialCommunityIcons name="qrcode" size={18} color="#000" />
-          <Text style={styles.primaryButtonText}>Receive</Text>
+          <MaterialCommunityIcons name="piggy-bank" size={18} color="#000" />
+          <Text style={styles.orangeButtonText}>Stack / Save</Text>
         </Pressable>
       </View>
 
-      <Text style={styles.orText}>OR</Text>
+      <Text style={styles.orText}>or</Text>
 
-      <View style={styles.actionRow}>
+      {/* Send & Receive Bitcoin */}
+      <Pressable style={styles.sectionRow} onPress={() => setTooltip('send')}>
+        <Text style={styles.sectionLabel}>Send & Receive Bitcoin</Text>
+        <MaterialCommunityIcons name="information-outline" size={16} color="#888" />
+      </Pressable>
+      <View style={styles.columnButtons}>
         <Pressable
-          style={styles.secondaryButton}
-          onPress={() => setTooltip('stack')}
+          style={styles.orangeButton}
+          onPress={() => setOverlay({ kind: 'scan' })}
         >
-          <MaterialCommunityIcons name="piggy-bank" size={18} color="#f7931a" />
-          <Text style={styles.secondaryButtonText}>Just stack (save)</Text>
+          <MaterialCommunityIcons name="send" size={18} color="#000" />
+          <Text style={styles.orangeButtonText}>Send</Text>
         </Pressable>
         <Pressable
-          style={styles.secondaryButton}
-          onPress={() => setTooltip('jukebox')}
+          style={styles.orangeButton}
+          onPress={() => setOverlay({ kind: 'receive' })}
         >
-          <MaterialCommunityIcons name="music-note" size={18} color="#f7931a" />
-          <Text style={styles.secondaryButtonText}>Jukebox</Text>
+          <MaterialCommunityIcons name="qrcode" size={18} color="#000" />
+          <Text style={styles.orangeButtonText}>Receive</Text>
         </Pressable>
       </View>
 
@@ -488,29 +489,43 @@ const styles = StyleSheet.create({
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    marginBottom: 20,
+    gap: 8,
+    marginBottom: 12,
   },
-  logo: {
-    fontSize: 36,
+  headerText: {
+    fontSize: 24,
     fontWeight: '800',
-    color: '#f7931a',
+    color: '#fff',
   },
   balanceContainer: {
     alignItems: 'center',
-    marginBottom: 24,
+    marginBottom: 28,
   },
   balanceValue: {
-    fontSize: 48,
+    fontSize: 36,
     fontWeight: '700',
     color: '#fff',
+  },
+  sectionLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#888',
+    marginBottom: 10,
+    alignSelf: 'flex-start',
+  },
+  sectionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 10,
+    alignSelf: 'flex-start',
   },
   actionRow: {
     flexDirection: 'row',
     gap: 12,
     width: '100%',
   },
-  primaryButton: {
+  orangeButton: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
@@ -520,32 +535,20 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     borderRadius: 8,
   },
-  primaryButtonText: {
+  orangeButtonText: {
     fontSize: 16,
     fontWeight: '700',
     color: '#000',
+  },
+  columnButtons: {
+    width: '100%',
+    gap: 12,
   },
   orText: {
     fontSize: 13,
     color: '#555',
     fontWeight: '600',
     marginVertical: 12,
-  },
-  secondaryButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    borderWidth: 1,
-    borderColor: '#333',
-    paddingVertical: 14,
-    borderRadius: 8,
-  },
-  secondaryButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#f7931a',
   },
   overlay: {
     position: 'absolute',
