@@ -15,7 +15,7 @@ import { initWallet, getAddress, getWallet, getCachedAddress } from './src/walle
 import { WithdrawOverlay } from './src/WithdrawOverlay'
 import { QRReceiveScreen } from './src/QRReceiveScreen'
 import { QRSendScreen } from './src/QRSendScreen'
-import { CoffeeIndicator } from './src/CoffeeIndicator'
+
 import { EducationalOverlay } from './src/EducationalOverlay'
 
 const API_URL = 'https://jukesats-server.fly.dev'
@@ -326,7 +326,7 @@ export default function App() {
   if (state.kind === 'loading') {
     return (
       <View style={styles.container}>
-        <Text style={styles.headerText}>Tap for Bitcoin(Sats)!</Text>
+        <Text style={styles.headerText}>Tap for Bitcoin!</Text>
         <ActivityIndicator size="large" color="#f7931a" style={{ marginTop: 20 }} />
         <StatusBar style="light" />
       </View>
@@ -336,7 +336,7 @@ export default function App() {
   if (state.kind === 'error') {
     return (
       <View style={styles.container}>
-        <Text style={styles.headerText}>Tap for Bitcoin(Sats)!</Text>
+        <Text style={styles.headerText}>Tap for Bitcoin!</Text>
         <Text style={styles.errorText}>{state.message}</Text>
         <Pressable style={styles.button} onPress={coldStart}>
           <Text style={styles.buttonText}>Retry</Text>
@@ -349,7 +349,7 @@ export default function App() {
   if (state.kind === 'rateLimited') {
     return (
       <View style={styles.container}>
-        <Text style={styles.headerText}>Tap for Bitcoin(Sats)!</Text>
+        <Text style={styles.headerText}>Tap for Bitcoin!</Text>
         <Text style={styles.subtitle}>Too fast!</Text>
         <Text style={styles.rateLimit}>
           Try again in {state.retryAfterSeconds}s
@@ -370,14 +370,9 @@ export default function App() {
     <View style={styles.container}>
       {/* Header */}
       <Pressable style={styles.headerRow} onPress={() => setTooltip('sats')}>
-        <Text style={styles.headerText}>Tap for Bitcoin(Sats)!</Text>
+        <Text style={styles.headerText}>Tap for Bitcoin!</Text>
         <MaterialCommunityIcons name="information-outline" size={20} color="#f7931a" />
       </Pressable>
-
-      <CoffeeIndicator
-        balance={balance}
-        onBuyCoffee={() => setOverlay({ kind: 'scan' })}
-      />
 
       {/* Balance */}
       <View style={styles.balanceContainer}>
@@ -387,44 +382,44 @@ export default function App() {
       </View>
 
       {/* Use your bitcoin */}
-      <Text style={styles.sectionLabel}>Use your bitcoin</Text>
+      <Text style={styles.sectionTitle}>Use your Bitcoin</Text>
       <View style={styles.actionRow}>
         <Pressable
           style={styles.orangeButton}
           onPress={() => setTooltip('jukebox')}
         >
-          <MaterialCommunityIcons name="music-note" size={18} color="#000" />
+          <MaterialCommunityIcons name="music-note" size={20} color="#000" />
           <Text style={styles.orangeButtonText}>JukeSats</Text>
         </Pressable>
         <Pressable
           style={styles.orangeButton}
           onPress={() => setTooltip('stack')}
         >
-          <MaterialCommunityIcons name="piggy-bank" size={18} color="#000" />
+          <MaterialCommunityIcons name="piggy-bank" size={20} color="#000" />
           <Text style={styles.orangeButtonText}>Stack / Save</Text>
         </Pressable>
       </View>
 
       <Text style={styles.orText}>or</Text>
 
-      {/* Send & Receive Bitcoin */}
+      {/* Wallet */}
       <Pressable style={styles.sectionRow} onPress={() => setTooltip('send')}>
-        <Text style={styles.sectionLabel}>Send & Receive Bitcoin</Text>
-        <MaterialCommunityIcons name="information-outline" size={16} color="#888" />
+        <Text style={styles.sectionTitle}>Wallet</Text>
+        <MaterialCommunityIcons name="information-outline" size={18} color="#f7931a" />
       </Pressable>
       <View style={styles.columnButtons}>
         <Pressable
-          style={styles.orangeButton}
+          style={styles.orangeButtonFull}
           onPress={() => setOverlay({ kind: 'scan' })}
         >
-          <MaterialCommunityIcons name="send" size={18} color="#000" />
+          <MaterialCommunityIcons name="arrow-top-right" size={20} color="#000" />
           <Text style={styles.orangeButtonText}>Send</Text>
         </Pressable>
         <Pressable
-          style={styles.orangeButton}
+          style={styles.orangeButtonFull}
           onPress={() => setOverlay({ kind: 'receive' })}
         >
-          <MaterialCommunityIcons name="qrcode" size={18} color="#000" />
+          <MaterialCommunityIcons name="qrcode" size={20} color="#000" />
           <Text style={styles.orangeButtonText}>Receive</Text>
         </Pressable>
       </View>
@@ -506,19 +501,20 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#fff',
   },
-  sectionLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#888',
-    marginBottom: 10,
-    alignSelf: 'flex-start',
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#ccc',
+    letterSpacing: 0.5,
+    textAlign: 'center',
+    marginBottom: 12,
   },
   sectionRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    marginBottom: 10,
-    alignSelf: 'flex-start',
+    justifyContent: 'center',
+    gap: 8,
+    marginBottom: 12,
   },
   actionRow: {
     flexDirection: 'row',
@@ -530,10 +526,20 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
+    gap: 8,
     backgroundColor: '#f7931a',
     paddingVertical: 14,
-    borderRadius: 8,
+    borderRadius: 10,
+  },
+  orangeButtonFull: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#f7931a',
+    paddingVertical: 14,
+    borderRadius: 10,
+    width: '100%',
   },
   orangeButtonText: {
     fontSize: 16,
