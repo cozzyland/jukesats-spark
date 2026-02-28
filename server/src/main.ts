@@ -511,9 +511,11 @@ export async function start() {
     await hotWallet.init()
 
     // Start VTXO chain cache (pre-caches chain data for offline unrolling)
+    const dataDir = path.dirname(process.env.WALLET_STORAGE_PATH || './data/hot-wallet')
     vtxoChainCache = new VtxoChainCache(
       hotWallet.getIndexerProvider(),
       () => hotWallet.getVtxos(),
+      path.join(dataDir, 'vtxo-chains'),
     )
     vtxoChainCache.start()
 

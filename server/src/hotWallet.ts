@@ -6,10 +6,12 @@ import {
 import type { Identity, NetworkName, ChainTx } from '@arkade-os/sdk'
 import { FileSystemStorageAdapter } from '@arkade-os/sdk/adapters/fileSystem'
 import fs from 'fs'
+import path from 'path'
 
 const ARK_SERVER_URL = process.env.ARK_SERVER_URL || 'https://arkade.computer'
 const STORAGE_PATH = process.env.WALLET_STORAGE_PATH || './data/hot-wallet'
-const EXIT_STATE_PATH = './data/exit-state.json'
+const DATA_DIR = path.dirname(STORAGE_PATH) // /data on Fly, ./data locally
+const EXIT_STATE_PATH = path.join(DATA_DIR, 'exit-state.json')
 
 // Balance thresholds
 const LOW_BALANCE_WARNING_SATS = 10000 // Warn when below 10k sats
