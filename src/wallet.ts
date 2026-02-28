@@ -1,4 +1,8 @@
-import { Wallet, SingleKey } from '@arkade-os/sdk'
+import {
+  Wallet, SingleKey, OnchainWallet, EsploraProvider, ESPLORA_URL,
+  Unroll, isSpendable, isRecoverable,
+} from '@arkade-os/sdk'
+import type { ExtendedVirtualCoin, Outpoint } from '@arkade-os/sdk'
 import { AsyncStorageAdapter } from '@arkade-os/sdk/adapters/asyncStorage'
 import { ExpoArkProvider, ExpoIndexerProvider } from '@arkade-os/sdk/adapters/expo'
 import * as SecureStore from 'expo-secure-store'
@@ -68,4 +72,73 @@ export function getAddress(): string | null {
 export async function sendBitcoin(recipientAddress: string, amount: number): Promise<string> {
   const w = getWallet()
   return w.sendBitcoin({ address: recipientAddress, amount })
+}
+
+// --- Unilateral Exit ---
+
+let onchainWallet: OnchainWallet | null = null
+
+/** Get or create the on-chain wallet (same private key, P2TR address). */
+export async function getOnchainWallet(): Promise<OnchainWallet> {
+  if (onchainWallet) return onchainWallet
+  const w = getWallet()
+  const networkName = w.networkName
+  const esploraUrl = ESPLORA_URL[networkName]
+  const esploraProvider = new EsploraProvider(esploraUrl, { forcePolling: true })
+  onchainWallet = await OnchainWallet.create(w.identity, networkName, esploraProvider)
+  return onchainWallet
+}
+
+/** Get on-chain address for funding miner fees. */
+export async function getOnchainAddress(): Promise<string> {
+  const ocw = await getOnchainWallet()
+  return ocw.address
+}
+
+/** Get on-chain balance (sats for miner fees). */
+export async function getOnchainBalance(): Promise<number> {
+  const ocw = await getOnchainWallet()
+  return ocw.getBalance()
+}
+
+/** Get VTXOs that can be unrolled (spendable or recoverable). */
+export async function getExitableVtxos(): Promise<ExtendedVirtualCoin[]> {
+  const w = getWallet()
+  const vtxos = await w.getVtxos({ withRecoverable: true })
+  return vtxos.filter(v => isSpendable(v) || isRecoverable(v))
+}
+
+export type UnrollProgress =
+  | { type: 'unroll'; txId: string }
+  | { type: 'wait'; txid: string }
+  | { type: 'done'; vtxoTxid: string }
+
+/** Begin unrolling a single VTXO. Yields progress events. */
+export async function* beginUnroll(outpoint: Outpoint): AsyncGenerator<UnrollProgress> {
+  const w = getWallet()
+  const ocw = await getOnchainWallet()
+  const networkName = w.networkName
+  const esploraUrl = ESPLORA_URL[networkName]
+  const esploraProvider = new EsploraProvider(esploraUrl, { forcePolling: true })
+
+  const session = await Unroll.Session.create(outpoint, ocw, esploraProvider, w.indexerProvider)
+  for await (const step of session) {
+    switch (step.type) {
+      case Unroll.StepType.UNROLL:
+        yield { type: 'unroll', txId: step.tx.id }
+        break
+      case Unroll.StepType.WAIT:
+        yield { type: 'wait', txid: step.txid }
+        break
+      case Unroll.StepType.DONE:
+        yield { type: 'done', vtxoTxid: step.vtxoTxid }
+        break
+    }
+  }
+}
+
+/** Complete exit: claim unrolled VTXOs to an on-chain address after CSV timelock. */
+export async function completeExit(vtxoTxids: string[], outputAddress: string): Promise<string> {
+  const w = getWallet()
+  return Unroll.completeUnroll(w, vtxoTxids, outputAddress)
 }

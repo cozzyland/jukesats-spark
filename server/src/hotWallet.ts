@@ -1,13 +1,28 @@
-import { Wallet, SingleKey, VtxoManager, waitForIncomingFunds } from '@arkade-os/sdk'
+import {
+  Wallet, SingleKey, VtxoManager, waitForIncomingFunds,
+  OnchainWallet, EsploraProvider, ESPLORA_URL, Unroll,
+  isSpendable, isRecoverable,
+} from '@arkade-os/sdk'
+import type { Identity, NetworkName, ChainTx } from '@arkade-os/sdk'
 import { FileSystemStorageAdapter } from '@arkade-os/sdk/adapters/fileSystem'
+import fs from 'fs'
 
 const ARK_SERVER_URL = process.env.ARK_SERVER_URL || 'https://arkade.computer'
 const STORAGE_PATH = process.env.WALLET_STORAGE_PATH || './data/hot-wallet'
+const EXIT_STATE_PATH = './data/exit-state.json'
 
 // Balance thresholds
 const LOW_BALANCE_WARNING_SATS = 10000 // Warn when below 10k sats
 const CRITICAL_BALANCE_SATS = 1000 // Critical when below 1k sats
 const MIN_RESERVE_SATS = 1000 // Never let balance fall below this (prevents subdust change issues)
+
+export type ExitState = {
+  phase: 'unrolling' | 'waiting' | 'complete'
+  vtxoTxids: string[] // completed unroll txids
+  outputAddress: string | null
+  startedAt: number
+  lastUpdate: number
+}
 
 export class HotWallet {
   private wallet: Wallet | null = null
@@ -15,6 +30,8 @@ export class HotWallet {
   private storage: FileSystemStorageAdapter
   private lastBalanceWarning: number = 0
   private listenerAbortController: AbortController | null = null
+  private onchainWallet: OnchainWallet | null = null
+  private exitInProgress = false
 
   constructor() {
     this.storage = new FileSystemStorageAdapter(STORAGE_PATH)
@@ -333,6 +350,199 @@ export class HotWallet {
   async getBoardingUtxos() {
     if (!this.wallet) throw new Error('Hot wallet not initialized')
     return this.wallet.getBoardingUtxos()
+  }
+
+  /**
+   * Get the indexer provider (for chain cache)
+   */
+  getIndexerProvider() {
+    if (!this.wallet) throw new Error('Hot wallet not initialized')
+    return this.wallet.indexerProvider
+  }
+
+  /**
+   * Initialize the on-chain wallet (same key, P2TR address) for fee bumping during unroll
+   */
+  async initOnchainWallet(): Promise<OnchainWallet> {
+    if (this.onchainWallet) return this.onchainWallet
+
+    if (!this.wallet) throw new Error('Hot wallet not initialized')
+
+    const networkName = this.wallet.networkName
+    const esploraUrl = ESPLORA_URL[networkName]
+    const esploraProvider = new EsploraProvider(esploraUrl, { forcePolling: true })
+
+    this.onchainWallet = await OnchainWallet.create(
+      this.wallet.identity,
+      networkName,
+      esploraProvider,
+    )
+
+    console.log(`[HotWallet] On-chain wallet initialized: ${this.onchainWallet.address}`)
+    return this.onchainWallet
+  }
+
+  /**
+   * Get on-chain wallet address (for funding miner fees before unroll)
+   */
+  async getOnchainAddress(): Promise<string> {
+    const ocw = await this.initOnchainWallet()
+    return ocw.address
+  }
+
+  /**
+   * Get on-chain wallet balance (sats available for miner fees)
+   */
+  async getOnchainBalance(): Promise<number> {
+    const ocw = await this.initOnchainWallet()
+    return ocw.getBalance()
+  }
+
+  /**
+   * Emergency exit: unilaterally unroll all VTXOs to on-chain Bitcoin.
+   * Called when ASP is detected offline.
+   *
+   * @param getCachedChain optional function to retrieve pre-cached chain data
+   *   for a VTXO outpoint (used when indexer is also down)
+   */
+  async emergencyExit(
+    getCachedChain?: (outpoint: { txid: string; vout: number }) => ChainTx[] | null
+  ): Promise<ExitState> {
+    if (!this.wallet) throw new Error('Hot wallet not initialized')
+    if (this.exitInProgress) {
+      console.warn('[HotWallet] Emergency exit already in progress')
+      const existing = this.loadExitState()
+      if (existing) return existing
+      // No saved state yet — exit just started, return a placeholder
+      return { phase: 'unrolling', vtxoTxids: [], outputAddress: null, startedAt: Date.now(), lastUpdate: Date.now() }
+    }
+
+    this.exitInProgress = true
+    console.log('[HotWallet] Starting emergency exit...')
+
+    try {
+      // 1. Init on-chain wallet
+      const ocw = await this.initOnchainWallet()
+      const onchainBalance = await ocw.getBalance()
+      console.log(`[HotWallet] On-chain balance for fees: ${onchainBalance} sats`)
+      if (onchainBalance === 0) {
+        console.warn('[HotWallet] WARNING: On-chain balance is 0. Unrolling requires miner fees.')
+        console.warn(`[HotWallet] Fund on-chain address: ${ocw.address}`)
+      }
+
+      // 2. Get VTXOs to unroll
+      const vtxos = await this.wallet.getVtxos({ withRecoverable: true })
+      const exitableVtxos = vtxos.filter(v => isSpendable(v) || isRecoverable(v))
+      console.log(`[HotWallet] Found ${exitableVtxos.length} VTXOs to unroll`)
+
+      if (exitableVtxos.length === 0) {
+        console.log('[HotWallet] No VTXOs to unroll')
+        this.exitInProgress = false
+        return { phase: 'complete', vtxoTxids: [], outputAddress: ocw.address, startedAt: Date.now(), lastUpdate: Date.now() }
+      }
+
+      // 3. Load or create exit state
+      let exitState = this.loadExitState() ?? {
+        phase: 'unrolling' as const,
+        vtxoTxids: [] as string[],
+        outputAddress: ocw.address,
+        startedAt: Date.now(),
+        lastUpdate: Date.now(),
+      }
+
+      const networkName = this.wallet.networkName
+      const esploraUrl = ESPLORA_URL[networkName]
+      const esploraProvider = new EsploraProvider(esploraUrl, { forcePolling: true })
+
+      // 4. Unroll each VTXO
+      for (const vtxo of exitableVtxos) {
+        const outpoint = { txid: vtxo.txid, vout: vtxo.vout }
+
+        // Skip if already unrolled in a previous run
+        if (exitState.vtxoTxids.includes(vtxo.txid)) {
+          console.log(`[HotWallet] Skipping already-unrolled VTXO ${vtxo.txid}:${vtxo.vout}`)
+          continue
+        }
+
+        try {
+          let session: Unroll.Session
+
+          // Try indexer first, fall back to cached chain data
+          try {
+            session = await Unroll.Session.create(outpoint, ocw, esploraProvider, this.wallet.indexerProvider)
+          } catch (indexerErr) {
+            console.warn(`[HotWallet] Indexer unavailable, trying cached chain for ${vtxo.txid}:${vtxo.vout}`)
+            const cachedChain = getCachedChain?.(outpoint)
+            if (!cachedChain) {
+              console.error(`[HotWallet] No cached chain data for ${vtxo.txid}:${vtxo.vout} — skipping`)
+              continue
+            }
+            session = new Unroll.Session(
+              { ...outpoint, chain: cachedChain },
+              ocw,
+              esploraProvider,
+              this.wallet.indexerProvider,
+            )
+          }
+
+          // Iterate the unroll steps
+          for await (const step of session) {
+            switch (step.type) {
+              case Unroll.StepType.UNROLL:
+                console.log(`[HotWallet] Broadcasting unroll tx: ${step.tx.id}`)
+                break
+              case Unroll.StepType.WAIT:
+                console.log(`[HotWallet] Waiting for confirmation: ${step.txid}`)
+                break
+              case Unroll.StepType.DONE:
+                console.log(`[HotWallet] Unroll complete for VTXO: ${step.vtxoTxid}`)
+                exitState.vtxoTxids.push(step.vtxoTxid)
+                exitState.lastUpdate = Date.now()
+                this.saveExitState(exitState)
+                break
+            }
+          }
+        } catch (err) {
+          console.error(`[HotWallet] Failed to unroll ${vtxo.txid}:${vtxo.vout}:`, err)
+        }
+      }
+
+      // 5. Complete unroll — claim funds after CSV timelock
+      if (exitState.vtxoTxids.length > 0) {
+        exitState.phase = 'waiting'
+        this.saveExitState(exitState)
+
+        try {
+          console.log(`[HotWallet] Completing unroll: claiming ${exitState.vtxoTxids.length} VTXOs to ${ocw.address}`)
+          const claimTxid = await Unroll.completeUnroll(this.wallet, exitState.vtxoTxids, ocw.address)
+          console.log(`[HotWallet] Claim broadcast! TX: ${claimTxid}`)
+          exitState.phase = 'complete'
+          exitState.lastUpdate = Date.now()
+          this.saveExitState(exitState)
+        } catch (err) {
+          console.error('[HotWallet] completeUnroll failed (CSV timelock may not have expired yet):', err)
+          // State is saved — can retry later
+        }
+      }
+
+      return exitState
+    } finally {
+      this.exitInProgress = false
+    }
+  }
+
+  private loadExitState(): ExitState | null {
+    try {
+      const data = fs.readFileSync(EXIT_STATE_PATH, 'utf-8')
+      return JSON.parse(data) as ExitState
+    } catch {
+      return null
+    }
+  }
+
+  private saveExitState(state: ExitState): void {
+    fs.mkdirSync('./data', { recursive: true })
+    fs.writeFileSync(EXIT_STATE_PATH, JSON.stringify(state, null, 2))
   }
 }
 

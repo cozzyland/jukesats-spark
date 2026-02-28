@@ -8,6 +8,8 @@ import { timingSafeEqual } from 'crypto'
 import { hotWallet } from './hotWallet.js'
 import { TapTracker } from './tapTracker.js'
 import { createDb } from './db.js'
+import { AspHealthMonitor } from './aspHealthMonitor.js'
+import { VtxoChainCache } from './vtxoChainCache.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -60,6 +62,23 @@ app.get('/tap', (req, res) => {
 const db = createDb()
 export const tapTracker = new TapTracker(db)
 tapTracker.cleanStalePendingTaps()
+
+// ASP health monitor + VTXO chain cache (initialized after wallet in start())
+const ARK_SERVER_URL = process.env.ARK_SERVER_URL || 'https://arkade.computer'
+export let vtxoChainCache: VtxoChainCache | null = null
+export const aspHealthMonitor = new AspHealthMonitor(ARK_SERVER_URL, (status) => {
+  if (!status.online) {
+    console.warn(`[ASP] ASP declared offline after ${status.consecutiveFailures} consecutive failures`)
+    // Trigger emergency exit
+    hotWallet.emergencyExit(
+      vtxoChainCache ? (op) => vtxoChainCache!.getCachedChain(op) : undefined
+    ).catch((err) => {
+      console.error('[ASP] Emergency exit failed:', err)
+    })
+  } else {
+    console.log('[ASP] ASP back online')
+  }
+})
 
 // Per-user mutex for serializing tap processing without cross-user blocking
 class MutexMap {
@@ -138,6 +157,32 @@ function getClientIp(req: express.Request): string {
  */
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok' })
+})
+
+/**
+ * ASP status (public — client polls this)
+ */
+app.get('/asp-status', (_req, res) => {
+  const { online } = aspHealthMonitor.getStatus()
+  res.json({ online })
+})
+
+/**
+ * ASP status (admin — full details)
+ */
+app.get('/admin/asp-status', requireAdmin, (_req, res) => {
+  const status = aspHealthMonitor.getStatus()
+  res.json({
+    online: status.online,
+    lastSeen: status.lastSeen,
+    consecutiveFailures: status.consecutiveFailures,
+    cachedInfo: status.cachedInfo ? {
+      unilateralExitDelay: status.cachedInfo.unilateralExitDelay.toString(),
+      network: status.cachedInfo.network,
+      dust: status.cachedInfo.dust.toString(),
+      version: status.cachedInfo.version,
+    } : null,
+  })
 })
 
 /**
@@ -465,6 +510,18 @@ export async function start() {
   try {
     await hotWallet.init()
 
+    // Start VTXO chain cache (pre-caches chain data for offline unrolling)
+    vtxoChainCache = new VtxoChainCache(
+      hotWallet.getIndexerProvider(),
+      () => hotWallet.getVtxos(),
+    )
+    vtxoChainCache.start()
+
+    // Start ASP health monitoring
+    aspHealthMonitor.start().catch((err) => {
+      console.error('[ASP] Failed initial health check:', err)
+    })
+
     // Start periodic VTXO renewal and recovery check
     setInterval(async () => {
       try {
@@ -481,6 +538,8 @@ export async function start() {
 
     const shutdown = (signal: string) => {
       console.log(`[Server] ${signal} received, shutting down...`)
+      aspHealthMonitor.stop()
+      vtxoChainCache?.stop()
       hotWallet.shutdown()
       server.close(() => {
         db.close()

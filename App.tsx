@@ -11,12 +11,15 @@ import { StatusBar } from 'expo-status-bar'
 import { MaterialCommunityIcons } from '@expo/vector-icons'
 import * as SplashScreen from 'expo-splash-screen'
 import * as Linking from 'expo-linking'
+import AsyncStorage from '@react-native-async-storage/async-storage'
 import { initWallet, getAddress, getWallet, getCachedAddress } from './src/wallet'
 import { WithdrawOverlay } from './src/WithdrawOverlay'
 import { QRReceiveScreen } from './src/QRReceiveScreen'
 import { QRSendScreen } from './src/QRSendScreen'
-
 import { EducationalOverlay } from './src/EducationalOverlay'
+import { useAspHealth } from './src/aspHealth'
+import { AspHealthBanner } from './src/AspHealthBanner'
+import { UnilateralExitOverlay } from './src/UnilateralExitOverlay'
 
 const API_URL = 'https://jukesats-server.fly.dev'
 const REWARD_SATS = 330
@@ -153,7 +156,10 @@ export default function App() {
     | { kind: 'receive' }
     | { kind: 'scan' }
     | { kind: 'send'; address: string; amount: number | null }
+    | { kind: 'exitInfo' }
+    | { kind: 'exit' }
   >(null)
+  const aspHealth = useAspHealth()
   const [tapCount, setTapCount] = useState(0)
   const [tooltip, setTooltip] = useState<TooltipKey | null>(null)
 
@@ -238,6 +244,18 @@ export default function App() {
           const tapResult = await submitTap(addr, tapParams.venueId, tapParams.tagId)
           await handleTapResult(tapResult, addr)
         } else {
+          // Check for in-progress exit on cold start
+          const exitState = await AsyncStorage.getItem('unilateral-exit-state')
+          if (exitState) {
+            const parsed = JSON.parse(exitState)
+            if (parsed.vtxoTxids?.length > 0) {
+              const balance = await getBalance()
+              setState({ kind: 'ready', balance, address: addr })
+              setOverlay({ kind: 'exit' })
+              return
+            }
+          }
+
           const [balance, count] = await Promise.all([getBalance(), fetchTapCount(addr)])
           setTapCount(count)
           setState({ kind: 'ready', balance, address: addr })
@@ -368,6 +386,11 @@ export default function App() {
 
   return (
     <View style={styles.container}>
+      {/* ASP Health Banner */}
+      {aspHealth === 'offline' && (
+        <AspHealthBanner onPress={() => setOverlay({ kind: 'exitInfo' })} />
+      )}
+
       {/* Header */}
       <Pressable style={styles.headerRow} onPress={() => setTooltip('sats')}>
         <Text style={styles.headerText}>Tap for Bitcoin!</Text>
@@ -409,19 +432,30 @@ export default function App() {
       </Pressable>
       <View style={styles.columnButtons}>
         <Pressable
-          style={styles.orangeButtonFull}
-          onPress={() => setOverlay({ kind: 'scan' })}
+          style={[styles.orangeButtonFull, aspHealth === 'offline' && styles.disabledButton]}
+          onPress={() => aspHealth !== 'offline' && setOverlay({ kind: 'scan' })}
+          disabled={aspHealth === 'offline'}
         >
-          <MaterialCommunityIcons name="arrow-top-right" size={20} color="#000" />
-          <Text style={styles.orangeButtonText}>Send</Text>
+          <MaterialCommunityIcons name="arrow-top-right" size={20} color={aspHealth === 'offline' ? '#666' : '#000'} />
+          <Text style={[styles.orangeButtonText, aspHealth === 'offline' && styles.disabledButtonText]}>Send</Text>
         </Pressable>
         <Pressable
-          style={styles.orangeButtonFull}
-          onPress={() => setOverlay({ kind: 'receive' })}
+          style={[styles.orangeButtonFull, aspHealth === 'offline' && styles.disabledButton]}
+          onPress={() => aspHealth !== 'offline' && setOverlay({ kind: 'receive' })}
+          disabled={aspHealth === 'offline'}
         >
-          <MaterialCommunityIcons name="qrcode" size={20} color="#000" />
-          <Text style={styles.orangeButtonText}>Receive</Text>
+          <MaterialCommunityIcons name="qrcode" size={20} color={aspHealth === 'offline' ? '#666' : '#000'} />
+          <Text style={[styles.orangeButtonText, aspHealth === 'offline' && styles.disabledButtonText]}>Receive</Text>
         </Pressable>
+        {aspHealth === 'offline' && (
+          <Pressable
+            style={styles.exitButton}
+            onPress={() => setOverlay({ kind: 'exit' })}
+          >
+            <MaterialCommunityIcons name="shield-alert-outline" size={20} color="#f7931a" />
+            <Text style={styles.exitButtonText}>Emergency Exit</Text>
+          </Pressable>
+        )}
       </View>
 
       {state.kind === 'tapSuccess' && (
@@ -457,6 +491,28 @@ export default function App() {
             setOverlay(null)
             refreshBalance()
           }}
+        />
+      )}
+
+      {overlay?.kind === 'exit' && (
+        <UnilateralExitOverlay
+          onClose={() => {
+            setOverlay(null)
+            refreshBalance()
+          }}
+        />
+      )}
+
+      {overlay?.kind === 'exitInfo' && (
+        <EducationalOverlay
+          title="Your funds are safe."
+          content={[
+            'The ASP (Ark Service Provider) is currently unreachable. This means you cannot send or receive sats through the normal Ark protocol.',
+            'However, your funds are NOT lost. The Ark protocol is designed so you can always recover your bitcoin to the main Bitcoin blockchain — without needing the ASP.',
+            'This is called a "unilateral exit." Your wallet holds pre-signed Bitcoin transactions that can be broadcast on-chain at any time.',
+            'To exit, you\'ll need a small amount of on-chain BTC for miner fees. The process takes some time due to Bitcoin\'s security timelocks, but your funds are always yours.',
+          ]}
+          onClose={() => setOverlay(null)}
         />
       )}
 
@@ -549,6 +605,29 @@ const styles = StyleSheet.create({
   columnButtons: {
     width: '100%',
     gap: 12,
+  },
+  disabledButton: {
+    backgroundColor: '#333',
+  },
+  disabledButtonText: {
+    color: '#666',
+  },
+  exitButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderColor: '#f7931a',
+    backgroundColor: '#1a1a1a',
+    paddingVertical: 14,
+    borderRadius: 10,
+    width: '100%',
+  },
+  exitButtonText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#f7931a',
   },
   orText: {
     fontSize: 13,

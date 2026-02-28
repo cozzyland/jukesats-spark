@@ -7,6 +7,35 @@ vi.mock('../db.js', async () => {
   return { createDb: () => createDb(':memory:') }
 })
 
+// Mock aspHealthMonitor before importing main
+vi.mock('../aspHealthMonitor.js', () => ({
+  AspHealthMonitor: vi.fn().mockImplementation(() => ({
+    start: vi.fn().mockResolvedValue(undefined),
+    stop: vi.fn(),
+    getStatus: vi.fn().mockReturnValue({
+      online: true,
+      lastSeen: Date.now(),
+      consecutiveFailures: 0,
+      cachedInfo: {
+        unilateralExitDelay: 604800n,
+        network: 'testnet4',
+        dust: 450n,
+        version: '0.3.0',
+      },
+    }),
+  })),
+}))
+
+// Mock vtxoChainCache before importing main
+vi.mock('../vtxoChainCache.js', () => ({
+  VtxoChainCache: vi.fn().mockImplementation(() => ({
+    start: vi.fn(),
+    stop: vi.fn(),
+    getCachedChain: vi.fn().mockReturnValue(null),
+    cacheAll: vi.fn().mockResolvedValue(undefined),
+  })),
+}))
+
 // Mock hotWallet before importing main
 vi.mock('../hotWallet.js', () => ({
   hotWallet: {
@@ -25,7 +54,9 @@ vi.mock('../hotWallet.js', () => ({
     getVtxos: vi.fn().mockResolvedValue([]),
     getBoardingUtxos: vi.fn().mockResolvedValue([]),
     recoverSweptVtxos: vi.fn().mockResolvedValue(null),
-    renewIfNeeded: vi.fn().mockResolvedValue(null)
+    renewIfNeeded: vi.fn().mockResolvedValue(null),
+    getIndexerProvider: vi.fn().mockReturnValue({}),
+    emergencyExit: vi.fn().mockResolvedValue({ phase: 'complete', vtxoTxids: [] }),
   }
 }))
 
@@ -47,6 +78,34 @@ describe('Server endpoints', () => {
       // Must NOT leak balance info
       expect(res.body.balance).toBeUndefined()
       expect(res.body.warning).toBeUndefined()
+    })
+  })
+
+  describe('GET /asp-status', () => {
+    it('returns online status without auth', async () => {
+      const res = await request(app).get('/asp-status')
+      expect(res.status).toBe(200)
+      expect(res.body).toEqual({ online: true })
+      // Must NOT leak full status details
+      expect(res.body.lastSeen).toBeUndefined()
+      expect(res.body.cachedInfo).toBeUndefined()
+    })
+  })
+
+  describe('GET /admin/asp-status', () => {
+    it('returns full status with auth', async () => {
+      const res = await request(app)
+        .get('/admin/asp-status')
+        .set('Authorization', 'Bearer test-admin-token')
+      expect(res.status).toBe(200)
+      expect(res.body.online).toBe(true)
+      expect(res.body.lastSeen).toBeDefined()
+      expect(res.body.cachedInfo).toBeDefined()
+    })
+
+    it('rejects without auth', async () => {
+      const res = await request(app).get('/admin/asp-status')
+      expect(res.status).toBe(401)
     })
   })
 
