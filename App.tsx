@@ -3,6 +3,7 @@ import {
   StyleSheet,
   Text,
   View,
+  SafeAreaView,
   ActivityIndicator,
   Pressable,
   Animated,
@@ -93,9 +94,6 @@ function parseDeepLink(url: string | null): { venueId: string; tagId: string } |
   if (!url) return null
   try {
     const parsed = new URL(url)
-    // Universal Links (iOS) / App Links (Android): https://cozzyland.net/tap?venue=...
-    // Custom scheme fallback (Android + simulator testing): jukesats://tap?venue=...
-    // In custom scheme URLs, "tap" becomes the host, not the path
     const isTapPath = parsed.pathname === '/tap' || parsed.host === 'tap'
     if (!isTapPath) return null
     const venueId = parsed.searchParams.get('venue')
@@ -343,340 +341,497 @@ export default function App() {
 
   if (state.kind === 'loading') {
     return (
-      <View style={styles.container}>
-        <Text style={styles.headerText}>Tap for Bitcoin!</Text>
-        <ActivityIndicator size="large" color="#f7931a" style={{ marginTop: 20 }} />
-        <StatusBar style="light" />
-      </View>
+      <SafeAreaView style={styles.safe}>
+        <View style={styles.centerScreen}>
+          <Text style={styles.brand}>JUKESATS</Text>
+          <ActivityIndicator size="large" color="#f7931a" style={{ marginTop: 24 }} />
+          <StatusBar style="light" />
+        </View>
+      </SafeAreaView>
     )
   }
 
   if (state.kind === 'error') {
     return (
-      <View style={styles.container}>
-        <Text style={styles.headerText}>Tap for Bitcoin!</Text>
-        <Text style={styles.errorText}>{state.message}</Text>
-        <Pressable style={styles.button} onPress={coldStart}>
-          <Text style={styles.buttonText}>Retry</Text>
-        </Pressable>
-        <StatusBar style="light" />
-      </View>
+      <SafeAreaView style={styles.safe}>
+        <View style={styles.centerScreen}>
+          <Text style={styles.brand}>JUKESATS</Text>
+          <Text style={styles.errorText}>{state.message}</Text>
+          <Pressable
+            style={({ pressed }) => [styles.primaryBtn, pressed && styles.primaryBtnPressed]}
+            onPress={coldStart}
+          >
+            <Text style={styles.primaryBtnText}>Retry</Text>
+          </Pressable>
+          <StatusBar style="light" />
+        </View>
+      </SafeAreaView>
     )
   }
 
   if (state.kind === 'rateLimited') {
     return (
-      <View style={styles.container}>
-        <Text style={styles.headerText}>Tap for Bitcoin!</Text>
-        <Text style={styles.subtitle}>Too fast!</Text>
-        <Text style={styles.rateLimit}>
-          Try again in {state.retryAfterSeconds}s
-        </Text>
-        <Pressable style={styles.button} onPress={coldStart}>
-          <Text style={styles.buttonText}>OK</Text>
-        </Pressable>
-        <StatusBar style="light" />
-      </View>
+      <SafeAreaView style={styles.safe}>
+        <View style={styles.centerScreen}>
+          <Text style={styles.brand}>JUKESATS</Text>
+          <Text style={styles.rateLimitTitle}>Too fast!</Text>
+          <Text style={styles.rateLimitSub}>
+            Try again in {state.retryAfterSeconds}s
+          </Text>
+          <Pressable
+            style={({ pressed }) => [styles.primaryBtn, pressed && styles.primaryBtnPressed]}
+            onPress={coldStart}
+          >
+            <Text style={styles.primaryBtnText}>OK</Text>
+          </Pressable>
+          <StatusBar style="light" />
+        </View>
+      </SafeAreaView>
     )
   }
 
   // Ready or TapSuccess
   const balance = state.balance
   const address = state.address
+  const isOffline = aspHealth === 'offline'
 
   return (
-    <View style={styles.container}>
-      {/* ASP Health Banner */}
-      {aspHealth === 'offline' && (
-        <AspHealthBanner onPress={() => setOverlay({ kind: 'exitInfo' })} />
-      )}
-
-      {/* Header */}
-      <Pressable style={styles.headerRow} onPress={() => setTooltip('sats')}>
-        <Text style={styles.headerText}>Tap for Bitcoin!</Text>
-        <MaterialCommunityIcons name="information-outline" size={20} color="#f7931a" />
-      </Pressable>
-
-      {/* Balance */}
-      <View style={styles.balanceContainer}>
-        <Text style={styles.balanceValue}>
-          {balance.toLocaleString()} sats
-        </Text>
-      </View>
-
-      {/* Use your bitcoin */}
-      <Text style={styles.sectionTitle}>Use your Bitcoin</Text>
-      <View style={styles.actionRow}>
-        <Pressable
-          style={styles.orangeButton}
-          onPress={() => setTooltip('jukebox')}
-        >
-          <MaterialCommunityIcons name="music-note" size={20} color="#000" />
-          <Text style={styles.orangeButtonText}>JukeSats</Text>
-        </Pressable>
-        <Pressable
-          style={styles.orangeButton}
-          onPress={() => setTooltip('stack')}
-        >
-          <MaterialCommunityIcons name="piggy-bank" size={20} color="#000" />
-          <Text style={styles.orangeButtonText}>Stack / Save</Text>
-        </Pressable>
-      </View>
-
-      <Text style={styles.orText}>or</Text>
-
-      {/* Wallet */}
-      <Pressable style={styles.sectionRow} onPress={() => setTooltip('send')}>
-        <Text style={styles.sectionTitle}>Wallet</Text>
-        <MaterialCommunityIcons name="information-outline" size={18} color="#f7931a" />
-      </Pressable>
-      <View style={styles.columnButtons}>
-        <Pressable
-          style={[styles.orangeButtonFull, aspHealth === 'offline' && styles.disabledButton]}
-          onPress={() => aspHealth !== 'offline' && setOverlay({ kind: 'scan' })}
-          disabled={aspHealth === 'offline'}
-        >
-          <MaterialCommunityIcons name="arrow-top-right" size={20} color={aspHealth === 'offline' ? '#666' : '#000'} />
-          <Text style={[styles.orangeButtonText, aspHealth === 'offline' && styles.disabledButtonText]}>Send</Text>
-        </Pressable>
-        <Pressable
-          style={[styles.orangeButtonFull, aspHealth === 'offline' && styles.disabledButton]}
-          onPress={() => aspHealth !== 'offline' && setOverlay({ kind: 'receive' })}
-          disabled={aspHealth === 'offline'}
-        >
-          <MaterialCommunityIcons name="qrcode" size={20} color={aspHealth === 'offline' ? '#666' : '#000'} />
-          <Text style={[styles.orangeButtonText, aspHealth === 'offline' && styles.disabledButtonText]}>Receive</Text>
-        </Pressable>
-        {aspHealth === 'offline' && (
-          <Pressable
-            style={styles.exitButton}
-            onPress={() => setOverlay({ kind: 'exit' })}
-          >
-            <MaterialCommunityIcons name="shield-alert-outline" size={20} color="#f7931a" />
-            <Text style={styles.exitButtonText}>Emergency Exit</Text>
-          </Pressable>
+    <SafeAreaView style={styles.safe}>
+      <View style={styles.screen}>
+        {/* ASP Health Banner */}
+        {isOffline && (
+          <AspHealthBanner onPress={() => setOverlay({ kind: 'exitInfo' })} />
         )}
+
+        {/* Brand header */}
+        <Text style={styles.brand}>JUKESATS</Text>
+
+        {/* Balance hero */}
+        <View style={styles.balanceHero}>
+          <View style={styles.balanceGlow} />
+          <Text style={styles.balanceAmount}>{balance.toLocaleString()}</Text>
+          <Pressable onPress={() => setTooltip('sats')} style={styles.unitRow} hitSlop={12}>
+            <Text style={styles.balanceUnit}>SATS</Text>
+            <MaterialCommunityIcons name="information-outline" size={13} color="#5a5449" />
+          </Pressable>
+        </View>
+
+        {/* Tap count */}
+        {tapCount > 0 && (
+          <Text style={styles.tapStat}>{tapCount} tap{tapCount !== 1 ? 's' : ''} earned</Text>
+        )}
+
+        {/* Divider */}
+        <View style={styles.divider} />
+
+        {/* Spend section */}
+        <Text style={styles.sectionLabel}>SPEND</Text>
+        <View style={styles.cardRow}>
+          <Pressable
+            style={({ pressed }) => [styles.featureCard, pressed && styles.cardPressed]}
+            onPress={() => setTooltip('jukebox')}
+          >
+            <MaterialCommunityIcons name="music-note" size={22} color="#f7931a" />
+            <Text style={styles.cardTitle}>JukeSats</Text>
+            <Text style={styles.cardSub}>Coming soon</Text>
+          </Pressable>
+          <Pressable
+            style={({ pressed }) => [styles.featureCard, pressed && styles.cardPressed]}
+            onPress={() => setTooltip('stack')}
+          >
+            <MaterialCommunityIcons name="trending-up" size={22} color="#f7931a" />
+            <Text style={styles.cardTitle}>Stack</Text>
+            <Text style={styles.cardSub}>Save in BTC</Text>
+          </Pressable>
+        </View>
+
+        {/* Divider */}
+        <View style={styles.divider} />
+
+        {/* Wallet section */}
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionLabel}>WALLET</Text>
+          <Pressable onPress={() => setTooltip('send')} hitSlop={12}>
+            <MaterialCommunityIcons name="information-outline" size={13} color="#5a5449" />
+          </Pressable>
+        </View>
+
+        <View style={styles.walletRows}>
+          <Pressable
+            style={({ pressed }) => [
+              styles.walletRow,
+              pressed && !isOffline && styles.walletRowPressed,
+              isOffline && styles.walletRowDisabled,
+            ]}
+            onPress={() => !isOffline && setOverlay({ kind: 'scan' })}
+            disabled={isOffline}
+          >
+            <View style={[styles.walletIcon, isOffline && styles.walletIconDim]}>
+              <MaterialCommunityIcons name="arrow-up" size={18} color={isOffline ? '#3a3530' : '#f7931a'} />
+            </View>
+            <Text style={[styles.walletRowText, isOffline && styles.walletRowTextDim]}>Send</Text>
+            <MaterialCommunityIcons name="chevron-right" size={18} color="#2a2825" />
+          </Pressable>
+
+          <Pressable
+            style={({ pressed }) => [
+              styles.walletRow,
+              pressed && !isOffline && styles.walletRowPressed,
+              isOffline && styles.walletRowDisabled,
+            ]}
+            onPress={() => !isOffline && setOverlay({ kind: 'receive' })}
+            disabled={isOffline}
+          >
+            <View style={[styles.walletIcon, isOffline && styles.walletIconDim]}>
+              <MaterialCommunityIcons name="arrow-down" size={18} color={isOffline ? '#3a3530' : '#f7931a'} />
+            </View>
+            <Text style={[styles.walletRowText, isOffline && styles.walletRowTextDim]}>Receive</Text>
+            <MaterialCommunityIcons name="chevron-right" size={18} color="#2a2825" />
+          </Pressable>
+
+          {isOffline && (
+            <Pressable
+              style={({ pressed }) => [styles.exitRow, pressed && styles.exitRowPressed]}
+              onPress={() => setOverlay({ kind: 'exit' })}
+            >
+              <MaterialCommunityIcons name="shield-alert-outline" size={18} color="#f7931a" />
+              <Text style={styles.exitRowText}>Emergency Exit</Text>
+              <MaterialCommunityIcons name="chevron-right" size={18} color="#2a2825" />
+            </Pressable>
+          )}
+        </View>
+
+        {/* Tap success overlay */}
+        {state.kind === 'tapSuccess' && (
+          <Animated.View style={[styles.tapOverlay, { opacity: fadeAnim }]}>
+            <Text style={styles.rewardAmount}>+{state.reward}</Text>
+            <Text style={styles.rewardUnit}>SATS</Text>
+          </Animated.View>
+        )}
+
+        {/* Overlays */}
+        {overlay?.kind === 'receive' && (
+          <QRReceiveScreen
+            address={address}
+            onClose={() => setOverlay(null)}
+          />
+        )}
+
+        {overlay?.kind === 'scan' && (
+          <QRSendScreen
+            onScanned={(result) => {
+              setOverlay({ kind: 'send', address: result.address, amount: result.amount })
+            }}
+            onClose={() => setOverlay(null)}
+          />
+        )}
+
+        {overlay?.kind === 'send' && (
+          <WithdrawOverlay
+            balance={balance}
+            initialAddress={overlay.address}
+            initialAmount={overlay.amount ?? undefined}
+            onClose={() => {
+              setOverlay(null)
+              refreshBalance()
+            }}
+          />
+        )}
+
+        {overlay?.kind === 'exit' && (
+          <UnilateralExitOverlay
+            onClose={() => {
+              setOverlay(null)
+              refreshBalance()
+            }}
+          />
+        )}
+
+        {overlay?.kind === 'exitInfo' && (
+          <EducationalOverlay
+            title="Your funds are safe."
+            content={[
+              'The ASP (Ark Service Provider) is currently unreachable. This means you cannot send or receive sats through the normal Ark protocol.',
+              'However, your funds are NOT lost. The Ark protocol is designed so you can always recover your bitcoin to the main Bitcoin blockchain — without needing the ASP.',
+              'This is called a "unilateral exit." Your wallet holds pre-signed Bitcoin transactions that can be broadcast on-chain at any time.',
+              'To exit, you\'ll need a small amount of on-chain BTC for miner fees. The process takes some time due to Bitcoin\'s security timelocks, but your funds are always yours.',
+            ]}
+            onClose={() => setOverlay(null)}
+          />
+        )}
+
+        {tooltip && (
+          <EducationalOverlay
+            title={TOOLTIPS[tooltip].title}
+            content={TOOLTIPS[tooltip].content}
+            onClose={() => setTooltip(null)}
+          />
+        )}
+
+        <StatusBar style="light" />
       </View>
-
-      {state.kind === 'tapSuccess' && (
-        <Animated.View style={[styles.overlay, { opacity: fadeAnim }]}>
-          <Text style={styles.rewardText}>
-            +{state.reward} sats!
-          </Text>
-        </Animated.View>
-      )}
-
-      {overlay?.kind === 'receive' && (
-        <QRReceiveScreen
-          address={address}
-          onClose={() => setOverlay(null)}
-        />
-      )}
-
-      {overlay?.kind === 'scan' && (
-        <QRSendScreen
-          onScanned={(result) => {
-            setOverlay({ kind: 'send', address: result.address, amount: result.amount })
-          }}
-          onClose={() => setOverlay(null)}
-        />
-      )}
-
-      {overlay?.kind === 'send' && (
-        <WithdrawOverlay
-          balance={balance}
-          initialAddress={overlay.address}
-          initialAmount={overlay.amount ?? undefined}
-          onClose={() => {
-            setOverlay(null)
-            refreshBalance()
-          }}
-        />
-      )}
-
-      {overlay?.kind === 'exit' && (
-        <UnilateralExitOverlay
-          onClose={() => {
-            setOverlay(null)
-            refreshBalance()
-          }}
-        />
-      )}
-
-      {overlay?.kind === 'exitInfo' && (
-        <EducationalOverlay
-          title="Your funds are safe."
-          content={[
-            'The ASP (Ark Service Provider) is currently unreachable. This means you cannot send or receive sats through the normal Ark protocol.',
-            'However, your funds are NOT lost. The Ark protocol is designed so you can always recover your bitcoin to the main Bitcoin blockchain — without needing the ASP.',
-            'This is called a "unilateral exit." Your wallet holds pre-signed Bitcoin transactions that can be broadcast on-chain at any time.',
-            'To exit, you\'ll need a small amount of on-chain BTC for miner fees. The process takes some time due to Bitcoin\'s security timelocks, but your funds are always yours.',
-          ]}
-          onClose={() => setOverlay(null)}
-        />
-      )}
-
-      {tooltip && (
-        <EducationalOverlay
-          title={TOOLTIPS[tooltip].title}
-          content={TOOLTIPS[tooltip].content}
-          onClose={() => setTooltip(null)}
-        />
-      )}
-
-      <StatusBar style="light" />
-    </View>
+    </SafeAreaView>
   )
 }
 
+// --- Styles ---
+
 const styles = StyleSheet.create({
-  container: {
+  safe: {
     flex: 1,
-    backgroundColor: '#0a0a0a',
+    backgroundColor: '#050505',
+  },
+
+  // Centered screens (loading, error, rate limit)
+  centerScreen: {
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 20,
+    paddingHorizontal: 24,
   },
-  headerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 12,
+
+  // Main screen
+  screen: {
+    flex: 1,
+    paddingHorizontal: 24,
+    paddingTop: 16,
   },
-  headerText: {
-    fontSize: 24,
-    fontWeight: '800',
-    color: '#fff',
-  },
-  balanceContainer: {
-    alignItems: 'center',
-    marginBottom: 28,
-  },
-  balanceValue: {
-    fontSize: 36,
-    fontWeight: '700',
-    color: '#fff',
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#ccc',
-    letterSpacing: 0.5,
+
+  // Brand
+  brand: {
+    fontSize: 13,
+    fontWeight: '600',
+    letterSpacing: 6,
+    color: '#5a5449',
     textAlign: 'center',
-    marginBottom: 12,
+    marginBottom: 8,
   },
-  sectionRow: {
+
+  // Balance hero
+  balanceHero: {
+    alignItems: 'center',
+    paddingVertical: 32,
+  },
+  balanceGlow: {
+    position: 'absolute',
+    width: 260,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: 'rgba(247, 147, 26, 0.04)',
+    top: 16,
+    // iOS shadow creates a soft amber halo
+    shadowColor: '#f7931a',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.12,
+    shadowRadius: 40,
+  },
+  balanceAmount: {
+    fontSize: 52,
+    fontWeight: '300',
+    color: '#f0ece4',
+    letterSpacing: -1,
+  },
+  unitRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    marginBottom: 12,
+    gap: 5,
+    marginTop: 4,
   },
-  actionRow: {
-    flexDirection: 'row',
-    gap: 12,
-    width: '100%',
-  },
-  orangeButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    backgroundColor: '#f7931a',
-    paddingVertical: 14,
-    borderRadius: 10,
-  },
-  orangeButtonFull: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    backgroundColor: '#f7931a',
-    paddingVertical: 14,
-    borderRadius: 10,
-    width: '100%',
-  },
-  orangeButtonText: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#000',
-  },
-  columnButtons: {
-    width: '100%',
-    gap: 12,
-  },
-  disabledButton: {
-    backgroundColor: '#333',
-  },
-  disabledButtonText: {
-    color: '#666',
-  },
-  exitButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    borderWidth: 1,
-    borderColor: '#f7931a',
-    backgroundColor: '#1a1a1a',
-    paddingVertical: 14,
-    borderRadius: 10,
-    width: '100%',
-  },
-  exitButtonText: {
-    fontSize: 16,
-    fontWeight: '700',
+  balanceUnit: {
+    fontSize: 13,
+    fontWeight: '600',
+    letterSpacing: 3,
     color: '#f7931a',
   },
-  orText: {
+
+  // Tap stat
+  tapStat: {
     fontSize: 13,
-    color: '#555',
-    fontWeight: '600',
-    marginVertical: 12,
+    color: '#5a5449',
+    textAlign: 'center',
+    marginBottom: 8,
   },
-  overlay: {
+
+  // Dividers
+  divider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: '#2a2825',
+    marginVertical: 20,
+  },
+
+  // Section labels
+  sectionLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 3,
+    color: '#5a5449',
+    marginBottom: 12,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 12,
+  },
+
+  // Feature cards
+  cardRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  featureCard: {
+    flex: 1,
+    backgroundColor: '#111110',
+    borderWidth: 1,
+    borderColor: '#2a2825',
+    borderRadius: 14,
+    padding: 16,
+    gap: 6,
+  },
+  cardPressed: {
+    backgroundColor: '#1a1918',
+    borderColor: '#3a3530',
+  },
+  cardTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#f0ece4',
+    marginTop: 4,
+  },
+  cardSub: {
+    fontSize: 12,
+    color: '#5a5449',
+  },
+
+  // Wallet rows
+  walletRows: {
+    gap: 8,
+  },
+  walletRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#111110',
+    borderWidth: 1,
+    borderColor: '#2a2825',
+    borderRadius: 14,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    gap: 12,
+  },
+  walletRowPressed: {
+    backgroundColor: '#1a1918',
+    borderColor: '#3a3530',
+  },
+  walletRowDisabled: {
+    opacity: 0.4,
+  },
+  walletIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(247, 147, 26, 0.08)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  walletIconDim: {
+    backgroundColor: 'rgba(247, 147, 26, 0.03)',
+  },
+  walletRowText: {
+    flex: 1,
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#f0ece4',
+  },
+  walletRowTextDim: {
+    color: '#3a3530',
+  },
+
+  // Emergency exit row
+  exitRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(247, 147, 26, 0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(247, 147, 26, 0.2)',
+    borderRadius: 14,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    gap: 12,
+  },
+  exitRowPressed: {
+    backgroundColor: 'rgba(247, 147, 26, 0.1)',
+  },
+  exitRowText: {
+    flex: 1,
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#f7931a',
+  },
+
+  // Tap success overlay
+  tapOverlay: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.85)',
+    backgroundColor: 'rgba(5, 5, 5, 0.92)',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  rewardText: {
-    fontSize: 56,
-    fontWeight: '900',
+  rewardAmount: {
+    fontSize: 64,
+    fontWeight: '200',
     color: '#f7931a',
+    letterSpacing: -2,
   },
+  rewardUnit: {
+    fontSize: 14,
+    fontWeight: '700',
+    letterSpacing: 4,
+    color: '#f7931a',
+    marginTop: 4,
+    opacity: 0.7,
+  },
+
+  // Error screen
   errorText: {
-    fontSize: 16,
-    color: '#ff4444',
+    fontSize: 15,
+    color: '#ef4444',
     textAlign: 'center',
-    marginBottom: 20,
-    maxWidth: 300,
+    marginTop: 24,
+    marginBottom: 24,
+    maxWidth: 280,
+    lineHeight: 22,
   },
-  subtitle: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#fff',
-    marginBottom: 10,
+
+  // Rate limit screen
+  rateLimitTitle: {
+    fontSize: 22,
+    fontWeight: '600',
+    color: '#f0ece4',
+    marginTop: 24,
+    marginBottom: 8,
   },
-  rateLimit: {
-    fontSize: 18,
-    color: '#888',
-    marginBottom: 30,
+  rateLimitSub: {
+    fontSize: 15,
+    color: '#5a5449',
+    marginBottom: 28,
   },
-  button: {
+
+  // Primary button
+  primaryBtn: {
     backgroundColor: '#f7931a',
-    paddingHorizontal: 32,
+    paddingHorizontal: 36,
     paddingVertical: 14,
-    borderRadius: 8,
+    borderRadius: 10,
   },
-  buttonText: {
-    fontSize: 16,
+  primaryBtnPressed: {
+    backgroundColor: '#d97e16',
+  },
+  primaryBtnText: {
+    fontSize: 15,
     fontWeight: '700',
-    color: '#000',
+    color: '#050505',
   },
 })

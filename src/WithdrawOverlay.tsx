@@ -113,7 +113,6 @@ export function WithdrawOverlay({ balance, onClose, initialAddress, initialAmoun
 
   function handleRetry() {
     if (current.step !== 'error') return
-    // Go back to form, keeping inputs
     setCurrent({ step: 'form' })
   }
 
@@ -141,10 +140,11 @@ export function WithdrawOverlay({ balance, onClose, initialAddress, initialAmoun
               value={addressInput}
               onChangeText={(text) => { setAddressInput(text); setValidationError('') }}
               placeholder="tark1... or ark1..."
-              placeholderTextColor="#555"
+              placeholderTextColor="#3a3530"
               autoCapitalize="none"
               autoCorrect={false}
               returnKeyType="next"
+              keyboardAppearance="dark"
             />
 
             <Text style={styles.label}>Amount (sats)</Text>
@@ -154,12 +154,16 @@ export function WithdrawOverlay({ balance, onClose, initialAddress, initialAmoun
                 value={amountInput}
                 onChangeText={(text) => { setAmountInput(text); setValidationError('') }}
                 placeholder="0"
-                placeholderTextColor="#555"
+                placeholderTextColor="#3a3530"
                 keyboardType="number-pad"
                 returnKeyType="done"
+                keyboardAppearance="dark"
               />
-              <Pressable style={styles.maxButton} onPress={handleMax}>
-                <Text style={styles.maxButtonText}>Max</Text>
+              <Pressable
+                style={({ pressed }) => [styles.maxBtn, pressed && styles.maxBtnPressed]}
+                onPress={handleMax}
+              >
+                <Text style={styles.maxBtnText}>Max</Text>
               </Pressable>
             </View>
 
@@ -172,11 +176,17 @@ export function WithdrawOverlay({ balance, onClose, initialAddress, initialAmoun
             ) : null}
 
             <View style={styles.buttonRow}>
-              <Pressable style={styles.cancelButton} onPress={onClose}>
-                <Text style={styles.cancelButtonText}>Cancel</Text>
+              <Pressable
+                style={({ pressed }) => [styles.secondaryBtn, pressed && styles.secondaryBtnPressed]}
+                onPress={onClose}
+              >
+                <Text style={styles.secondaryBtnText}>Cancel</Text>
               </Pressable>
-              <Pressable style={styles.primaryButton} onPress={handleContinue}>
-                <Text style={styles.primaryButtonText}>Continue</Text>
+              <Pressable
+                style={({ pressed }) => [styles.primaryBtn, pressed && styles.primaryBtnPressed]}
+                onPress={handleContinue}
+              >
+                <Text style={styles.primaryBtnText}>Continue</Text>
               </Pressable>
             </View>
           </>
@@ -186,19 +196,26 @@ export function WithdrawOverlay({ balance, onClose, initialAddress, initialAmoun
           <>
             <Text style={styles.title}>Confirm Send</Text>
             <Text style={styles.amountDisplay}>
-              {current.amount.toLocaleString()} sats
+              {current.amount.toLocaleString()}
             </Text>
+            <Text style={styles.amountUnit}>SATS</Text>
             <Text style={styles.toLabel}>to</Text>
             <Text style={styles.fullAddress} selectable>
               {current.address}
             </Text>
 
             <View style={styles.buttonRow}>
-              <Pressable style={styles.cancelButton} onPress={handleBack}>
-                <Text style={styles.cancelButtonText}>Back</Text>
+              <Pressable
+                style={({ pressed }) => [styles.secondaryBtn, pressed && styles.secondaryBtnPressed]}
+                onPress={handleBack}
+              >
+                <Text style={styles.secondaryBtnText}>Back</Text>
               </Pressable>
-              <Pressable style={styles.primaryButton} onPress={handleSend}>
-                <Text style={styles.primaryButtonText}>Send</Text>
+              <Pressable
+                style={({ pressed }) => [styles.primaryBtn, pressed && styles.primaryBtnPressed]}
+                onPress={handleSend}
+              >
+                <Text style={styles.primaryBtnText}>Send</Text>
               </Pressable>
             </View>
           </>
@@ -218,14 +235,18 @@ export function WithdrawOverlay({ balance, onClose, initialAddress, initialAmoun
           <>
             <Text style={styles.successTitle}>Sent!</Text>
             <Text style={styles.amountDisplay}>
-              {current.amount.toLocaleString()} sats
+              {current.amount.toLocaleString()}
             </Text>
-            <Text style={styles.txidLabel}>TX</Text>
+            <Text style={styles.amountUnit}>SATS</Text>
+            <Text style={styles.txidLabel}>TRANSACTION</Text>
             <Text style={styles.txid} selectable numberOfLines={1} ellipsizeMode="middle">
               {current.txid}
             </Text>
-            <Pressable style={styles.primaryButton} onPress={onClose}>
-              <Text style={styles.primaryButtonText}>Done</Text>
+            <Pressable
+              style={({ pressed }) => [styles.primaryBtn, pressed && styles.primaryBtnPressed]}
+              onPress={onClose}
+            >
+              <Text style={styles.primaryBtnText}>Done</Text>
             </Pressable>
           </>
         )}
@@ -235,11 +256,17 @@ export function WithdrawOverlay({ balance, onClose, initialAddress, initialAmoun
             <Text style={styles.errorTitle}>Send Failed</Text>
             <Text style={styles.errorMessage}>{current.message}</Text>
             <View style={styles.buttonRow}>
-              <Pressable style={styles.cancelButton} onPress={onClose}>
-                <Text style={styles.cancelButtonText}>Cancel</Text>
+              <Pressable
+                style={({ pressed }) => [styles.secondaryBtn, pressed && styles.secondaryBtnPressed]}
+                onPress={onClose}
+              >
+                <Text style={styles.secondaryBtnText}>Cancel</Text>
               </Pressable>
-              <Pressable style={styles.cancelButton} onPress={handleRetry}>
-                <Text style={styles.cancelButtonText}>Retry</Text>
+              <Pressable
+                style={({ pressed }) => [styles.secondaryBtn, pressed && styles.secondaryBtnPressed]}
+                onPress={handleRetry}
+              >
+                <Text style={styles.secondaryBtnText}>Retry</Text>
               </Pressable>
             </View>
           </>
@@ -258,10 +285,10 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.95)',
+    backgroundColor: 'rgba(5, 5, 5, 0.96)',
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 20,
+    padding: 24,
   },
   content: {
     width: '100%',
@@ -269,23 +296,25 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   title: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#fff',
+    fontSize: 22,
+    fontWeight: '600',
+    color: '#f0ece4',
     marginBottom: 24,
   },
   label: {
-    fontSize: 13,
-    color: '#888',
+    fontSize: 12,
+    fontWeight: '600',
+    letterSpacing: 0.5,
+    color: '#5a5449',
     alignSelf: 'stretch',
     marginBottom: 6,
   },
   input: {
-    backgroundColor: '#1a1a1a',
+    backgroundColor: '#111110',
     borderWidth: 1,
-    borderColor: '#333',
-    borderRadius: 8,
-    color: '#fff',
+    borderColor: '#2a2825',
+    borderRadius: 10,
+    color: '#f0ece4',
     fontSize: 16,
     padding: 14,
     width: '100%',
@@ -300,26 +329,32 @@ const styles = StyleSheet.create({
   amountInput: {
     flex: 1,
   },
-  maxButton: {
-    backgroundColor: '#333',
+  maxBtn: {
+    backgroundColor: '#111110',
+    borderWidth: 1,
+    borderColor: '#2a2825',
     paddingHorizontal: 16,
     paddingVertical: 14,
-    borderRadius: 8,
+    borderRadius: 10,
     marginBottom: 16,
   },
-  maxButtonText: {
+  maxBtnPressed: {
+    backgroundColor: '#1a1918',
+    borderColor: '#3a3530',
+  },
+  maxBtnText: {
     color: '#f7931a',
     fontSize: 14,
     fontWeight: '600',
   },
   availableText: {
-    fontSize: 13,
-    color: '#666',
+    fontSize: 12,
+    color: '#5a5449',
     marginBottom: 8,
   },
   errorText: {
-    fontSize: 14,
-    color: '#ff4444',
+    fontSize: 13,
+    color: '#ef4444',
     textAlign: 'center',
     marginBottom: 8,
   },
@@ -328,81 +363,100 @@ const styles = StyleSheet.create({
     gap: 12,
     marginTop: 20,
   },
-  cancelButton: {
+  secondaryBtn: {
     borderWidth: 1,
-    borderColor: '#444',
+    borderColor: '#2a2825',
     paddingHorizontal: 28,
     paddingVertical: 14,
-    borderRadius: 8,
+    borderRadius: 10,
   },
-  cancelButtonText: {
-    fontSize: 16,
+  secondaryBtnPressed: {
+    backgroundColor: '#111110',
+    borderColor: '#3a3530',
+  },
+  secondaryBtnText: {
+    fontSize: 15,
     fontWeight: '600',
-    color: '#888',
+    color: '#5a5449',
   },
-  primaryButton: {
+  primaryBtn: {
     backgroundColor: '#f7931a',
     paddingHorizontal: 28,
     paddingVertical: 14,
-    borderRadius: 8,
+    borderRadius: 10,
   },
-  primaryButtonText: {
-    fontSize: 16,
+  primaryBtnPressed: {
+    backgroundColor: '#d97e16',
+  },
+  primaryBtnText: {
+    fontSize: 15,
     fontWeight: '700',
-    color: '#000',
+    color: '#050505',
   },
   amountDisplay: {
-    fontSize: 36,
-    fontWeight: '800',
-    color: '#fff',
-    marginBottom: 8,
+    fontSize: 40,
+    fontWeight: '300',
+    color: '#f0ece4',
+    letterSpacing: -1,
+  },
+  amountUnit: {
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 3,
+    color: '#f7931a',
+    marginTop: 2,
+    marginBottom: 12,
   },
   toLabel: {
-    fontSize: 16,
-    color: '#666',
+    fontSize: 14,
+    color: '#5a5449',
     marginBottom: 12,
   },
   fullAddress: {
-    fontSize: 13,
-    color: '#aaa',
+    fontSize: 12,
+    color: '#8a8578',
     textAlign: 'center',
     marginBottom: 24,
     paddingHorizontal: 8,
+    lineHeight: 18,
   },
   sendingHint: {
-    fontSize: 14,
-    color: '#666',
+    fontSize: 13,
+    color: '#5a5449',
     marginTop: 16,
   },
   successTitle: {
-    fontSize: 28,
-    fontWeight: '800',
+    fontSize: 26,
+    fontWeight: '600',
     color: '#4ade80',
     marginBottom: 16,
   },
   txidLabel: {
-    fontSize: 12,
-    color: '#666',
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 2,
+    color: '#5a5449',
     marginTop: 16,
-    marginBottom: 4,
+    marginBottom: 6,
   },
   txid: {
-    fontSize: 13,
-    color: '#888',
+    fontSize: 12,
+    color: '#8a8578',
     maxWidth: 280,
     marginBottom: 24,
   },
   errorTitle: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#ff4444',
+    fontSize: 22,
+    fontWeight: '600',
+    color: '#ef4444',
     marginBottom: 16,
   },
   errorMessage: {
-    fontSize: 16,
-    color: '#aaa',
+    fontSize: 14,
+    color: '#8a8578',
     textAlign: 'center',
     marginBottom: 8,
     maxWidth: 300,
+    lineHeight: 22,
   },
 })

@@ -47,17 +47,14 @@ export function UnilateralExitOverlay({ onClose }: Props) {
     return () => { mountedRef.current = false }
   }, [])
 
-  // Initialize — check for in-progress exit or start fresh
   useEffect(() => {
     init()
   }, [])
 
   async function init() {
     try {
-      // Check for in-progress exit
       const saved = await loadExitState()
       if (saved && saved.vtxoTxids.length > 0) {
-        // Resume at timelock wait or claiming
         setCurrent({
           step: 'timelockWait',
           vtxoTxids: saved.vtxoTxids,
@@ -66,7 +63,6 @@ export function UnilateralExitOverlay({ onClose }: Props) {
         return
       }
 
-      // Fresh start — gather info
       const [vtxos, onchainAddress] = await Promise.all([
         getExitableVtxos(),
         getOnchainAddress(),
@@ -136,7 +132,6 @@ export function UnilateralExitOverlay({ onClose }: Props) {
           }
         } catch (err) {
           console.error(`[Exit] Failed to unroll ${vtxo.txid}:${vtxo.vout}:`, err)
-          // Continue with remaining VTXOs
         }
       }
 
@@ -179,7 +174,6 @@ export function UnilateralExitOverlay({ onClose }: Props) {
     } catch (err) {
       if (!mountedRef.current) return
       const message = err instanceof Error ? err.message : 'Claim failed'
-      // If it mentions timelock, the user needs to wait longer
       const isTimelockError = message.toLowerCase().includes('timelock') || message.toLowerCase().includes('csv')
       setCurrent({
         step: 'error',
@@ -235,11 +229,17 @@ export function UnilateralExitOverlay({ onClose }: Props) {
               <Text style={styles.emptyText}>No VTXOs to unroll. Your balance may already be on-chain.</Text>
             ) : (
               <View style={styles.buttonRow}>
-                <Pressable style={styles.cancelButton} onPress={onClose}>
-                  <Text style={styles.cancelButtonText}>Not now</Text>
+                <Pressable
+                  style={({ pressed }) => [styles.secondaryBtn, pressed && styles.secondaryBtnPressed]}
+                  onPress={onClose}
+                >
+                  <Text style={styles.secondaryBtnText}>Not now</Text>
                 </Pressable>
-                <Pressable style={styles.primaryButton} onPress={handleContinueToFund}>
-                  <Text style={styles.primaryButtonText}>Continue</Text>
+                <Pressable
+                  style={({ pressed }) => [styles.primaryBtn, pressed && styles.primaryBtnPressed]}
+                  onPress={handleContinueToFund}
+                >
+                  <Text style={styles.primaryBtnText}>Continue</Text>
                 </Pressable>
               </View>
             )}
@@ -254,7 +254,7 @@ export function UnilateralExitOverlay({ onClose }: Props) {
             </Text>
 
             <View style={styles.qrContainer}>
-              <QRCode value={current.onchainAddress} size={200} backgroundColor="#fff" />
+              <QRCode value={current.onchainAddress} size={200} backgroundColor="#f0ece4" color="#050505" />
             </View>
 
             <Pressable onPress={() => handleShareAddress(current.onchainAddress)}>
@@ -270,15 +270,22 @@ export function UnilateralExitOverlay({ onClose }: Props) {
             </View>
 
             <View style={styles.buttonRow}>
-              <Pressable style={styles.cancelButton} onPress={handleRefreshBalance}>
-                <Text style={styles.cancelButtonText}>Refresh</Text>
+              <Pressable
+                style={({ pressed }) => [styles.secondaryBtn, pressed && styles.secondaryBtnPressed]}
+                onPress={handleRefreshBalance}
+              >
+                <Text style={styles.secondaryBtnText}>Refresh</Text>
               </Pressable>
               <Pressable
-                style={[styles.primaryButton, current.onchainBalance === 0 && styles.disabledPrimary]}
+                style={({ pressed }) => [
+                  styles.primaryBtn,
+                  current.onchainBalance === 0 && styles.disabledPrimary,
+                  pressed && current.onchainBalance > 0 && styles.primaryBtnPressed,
+                ]}
                 onPress={current.onchainBalance > 0 ? handleStartUnroll : undefined}
                 disabled={current.onchainBalance === 0}
               >
-                <Text style={styles.primaryButtonText}>
+                <Text style={styles.primaryBtnText}>
                   {current.onchainBalance > 0 ? 'Start Unroll' : 'Waiting for funds...'}
                 </Text>
               </Pressable>
@@ -315,11 +322,17 @@ export function UnilateralExitOverlay({ onClose }: Props) {
               You can close this screen and come back later.
             </Text>
             <View style={styles.buttonRow}>
-              <Pressable style={styles.cancelButton} onPress={onClose}>
-                <Text style={styles.cancelButtonText}>Close</Text>
+              <Pressable
+                style={({ pressed }) => [styles.secondaryBtn, pressed && styles.secondaryBtnPressed]}
+                onPress={onClose}
+              >
+                <Text style={styles.secondaryBtnText}>Close</Text>
               </Pressable>
-              <Pressable style={styles.primaryButton} onPress={handleClaim}>
-                <Text style={styles.primaryButtonText}>Try Claim</Text>
+              <Pressable
+                style={({ pressed }) => [styles.primaryBtn, pressed && styles.primaryBtnPressed]}
+                onPress={handleClaim}
+              >
+                <Text style={styles.primaryBtnText}>Try Claim</Text>
               </Pressable>
             </View>
           </>
@@ -341,12 +354,15 @@ export function UnilateralExitOverlay({ onClose }: Props) {
             <Text style={styles.subtitle}>
               Your bitcoin has been sent to your on-chain address.
             </Text>
-            <Text style={styles.txidLabel}>Transaction</Text>
+            <Text style={styles.txidLabel}>TRANSACTION</Text>
             <Text style={styles.txid} selectable numberOfLines={1} ellipsizeMode="middle">
               {current.txid}
             </Text>
-            <Pressable style={styles.primaryButton} onPress={onClose}>
-              <Text style={styles.primaryButtonText}>Done</Text>
+            <Pressable
+              style={({ pressed }) => [styles.primaryBtn, pressed && styles.primaryBtnPressed]}
+              onPress={onClose}
+            >
+              <Text style={styles.primaryBtnText}>Done</Text>
             </Pressable>
           </>
         )}
@@ -356,12 +372,18 @@ export function UnilateralExitOverlay({ onClose }: Props) {
             <Text style={styles.errorTitle}>Error</Text>
             <Text style={styles.errorMessage}>{current.message}</Text>
             <View style={styles.buttonRow}>
-              <Pressable style={styles.cancelButton} onPress={onClose}>
-                <Text style={styles.cancelButtonText}>Close</Text>
+              <Pressable
+                style={({ pressed }) => [styles.secondaryBtn, pressed && styles.secondaryBtnPressed]}
+                onPress={onClose}
+              >
+                <Text style={styles.secondaryBtnText}>Close</Text>
               </Pressable>
               {current.canRetry && (
-                <Pressable style={styles.primaryButton} onPress={handleRetry}>
-                  <Text style={styles.primaryButtonText}>Retry</Text>
+                <Pressable
+                  style={({ pressed }) => [styles.primaryBtn, pressed && styles.primaryBtnPressed]}
+                  onPress={handleRetry}
+                >
+                  <Text style={styles.primaryBtnText}>Retry</Text>
                 </Pressable>
               )}
             </View>
@@ -401,10 +423,10 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.95)',
+    backgroundColor: 'rgba(5, 5, 5, 0.96)',
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 20,
+    padding: 24,
   },
   content: {
     width: '100%',
@@ -413,86 +435,90 @@ const styles = StyleSheet.create({
     paddingVertical: 40,
   },
   title: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#fff',
+    fontSize: 22,
+    fontWeight: '600',
+    color: '#f0ece4',
     marginBottom: 12,
     textAlign: 'center',
   },
   subtitle: {
-    fontSize: 16,
-    color: '#aaa',
+    fontSize: 14,
+    color: '#8a8578',
     textAlign: 'center',
     marginBottom: 20,
     lineHeight: 22,
   },
   infoCard: {
-    backgroundColor: '#1a1a1a',
-    borderRadius: 10,
+    backgroundColor: '#111110',
+    borderWidth: 1,
+    borderColor: '#2a2825',
+    borderRadius: 12,
     padding: 16,
     width: '100%',
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 10,
   },
   infoLabel: {
-    fontSize: 14,
-    color: '#888',
+    fontSize: 13,
+    color: '#5a5449',
   },
   infoValue: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#fff',
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#f0ece4',
   },
   warningText: {
-    fontSize: 14,
-    color: '#888',
+    fontSize: 13,
+    color: '#5a5449',
     textAlign: 'center',
     marginVertical: 16,
     lineHeight: 20,
     paddingHorizontal: 8,
   },
   emptyText: {
-    fontSize: 14,
-    color: '#666',
+    fontSize: 13,
+    color: '#5a5449',
     textAlign: 'center',
     marginTop: 20,
   },
   qrContainer: {
-    backgroundColor: '#fff',
-    padding: 16,
-    borderRadius: 12,
+    backgroundColor: '#f0ece4',
+    padding: 18,
+    borderRadius: 16,
     marginVertical: 16,
   },
   addressText: {
-    fontSize: 13,
-    color: '#aaa',
+    fontSize: 12,
+    color: '#8a8578',
     textAlign: 'center',
     marginBottom: 4,
     paddingHorizontal: 8,
+    lineHeight: 18,
   },
   shareHint: {
-    fontSize: 12,
+    fontSize: 11,
+    fontWeight: '600',
     color: '#f7931a',
     textAlign: 'center',
     marginBottom: 16,
   },
   progressText: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '600',
-    color: '#fff',
+    color: '#f0ece4',
     marginBottom: 8,
   },
   txidSmall: {
-    fontSize: 12,
-    color: '#666',
+    fontSize: 11,
+    color: '#5a5449',
     maxWidth: 280,
     marginBottom: 16,
   },
   hintText: {
-    fontSize: 14,
-    color: '#666',
+    fontSize: 13,
+    color: '#5a5449',
     textAlign: 'center',
   },
   buttonRow: {
@@ -500,59 +526,68 @@ const styles = StyleSheet.create({
     gap: 12,
     marginTop: 20,
   },
-  cancelButton: {
+  secondaryBtn: {
     borderWidth: 1,
-    borderColor: '#444',
+    borderColor: '#2a2825',
     paddingHorizontal: 28,
     paddingVertical: 14,
-    borderRadius: 8,
+    borderRadius: 10,
   },
-  cancelButtonText: {
-    fontSize: 16,
+  secondaryBtnPressed: {
+    backgroundColor: '#111110',
+    borderColor: '#3a3530',
+  },
+  secondaryBtnText: {
+    fontSize: 15,
     fontWeight: '600',
-    color: '#888',
+    color: '#5a5449',
   },
-  primaryButton: {
+  primaryBtn: {
     backgroundColor: '#f7931a',
     paddingHorizontal: 28,
     paddingVertical: 14,
-    borderRadius: 8,
+    borderRadius: 10,
   },
-  primaryButtonText: {
-    fontSize: 16,
+  primaryBtnPressed: {
+    backgroundColor: '#d97e16',
+  },
+  primaryBtnText: {
+    fontSize: 15,
     fontWeight: '700',
-    color: '#000',
+    color: '#050505',
   },
   disabledPrimary: {
-    backgroundColor: '#333',
+    backgroundColor: '#2a2825',
   },
   successTitle: {
-    fontSize: 28,
-    fontWeight: '800',
+    fontSize: 26,
+    fontWeight: '600',
     color: '#4ade80',
     marginBottom: 16,
   },
   txidLabel: {
-    fontSize: 12,
-    color: '#666',
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 2,
+    color: '#5a5449',
     marginTop: 16,
-    marginBottom: 4,
+    marginBottom: 6,
   },
   txid: {
-    fontSize: 13,
-    color: '#888',
+    fontSize: 12,
+    color: '#8a8578',
     maxWidth: 280,
     marginBottom: 24,
   },
   errorTitle: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#ff4444',
+    fontSize: 22,
+    fontWeight: '600',
+    color: '#ef4444',
     marginBottom: 16,
   },
   errorMessage: {
-    fontSize: 16,
-    color: '#aaa',
+    fontSize: 14,
+    color: '#8a8578',
     textAlign: 'center',
     marginBottom: 8,
     maxWidth: 300,

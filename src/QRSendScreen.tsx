@@ -19,25 +19,15 @@ type Props = {
   onClose: () => void
 }
 
-/**
- * Parse a QR code value into an ARK address + optional amount.
- *
- * Accepted formats:
- *   ark1qq4hfss...              (raw address)
- *   tark1qq4hfss...             (raw testnet address)
- *   ark:ark1qq4hfss...?amount=330
- *   ark:tark1qq4hfss...?amount=330
- */
 function parseQR(data: string): ScanResult | null {
   const trimmed = data.trim()
 
   // ark: URI scheme
   if (trimmed.startsWith('ark:')) {
-    const rest = trimmed.slice(4) // remove "ark:"
+    const rest = trimmed.slice(4)
     const qIdx = rest.indexOf('?')
 
     if (qIdx === -1) {
-      // No query params — just the address
       const address = rest
       if (!looksLikeArkAddress(address)) return null
       return { address, amount: null }
@@ -96,11 +86,17 @@ export function QRSendScreen({ onScanned, onClose }: Props) {
             Jukesats needs camera access to scan QR codes
           </Text>
           <View style={styles.buttonRow}>
-            <Pressable style={styles.cancelButton} onPress={onClose}>
-              <Text style={styles.cancelButtonText}>Cancel</Text>
+            <Pressable
+              style={({ pressed }) => [styles.secondaryBtn, pressed && styles.secondaryBtnPressed]}
+              onPress={onClose}
+            >
+              <Text style={styles.secondaryBtnText}>Cancel</Text>
             </Pressable>
-            <Pressable style={styles.primaryButton} onPress={requestPermission}>
-              <Text style={styles.primaryButtonText}>Allow</Text>
+            <Pressable
+              style={({ pressed }) => [styles.primaryBtn, pressed && styles.primaryBtnPressed]}
+              onPress={requestPermission}
+            >
+              <Text style={styles.primaryBtnText}>Allow</Text>
             </Pressable>
           </View>
         </View>
@@ -123,8 +119,11 @@ export function QRSendScreen({ onScanned, onClose }: Props) {
       <Text style={styles.hint}>
         Point at a Jukesats receive QR code
       </Text>
-      <Pressable style={styles.cancelButton} onPress={onClose}>
-        <Text style={styles.cancelButtonText}>Cancel</Text>
+      <Pressable
+        style={({ pressed }) => [styles.secondaryBtn, pressed && styles.secondaryBtnPressed]}
+        onPress={onClose}
+      >
+        <Text style={styles.secondaryBtnText}>Cancel</Text>
       </Pressable>
     </View>
   )
@@ -137,10 +136,10 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.95)',
+    backgroundColor: 'rgba(5, 5, 5, 0.96)',
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 20,
+    padding: 24,
   },
   content: {
     width: '100%',
@@ -148,59 +147,68 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   scanTitle: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#fff',
+    fontSize: 22,
+    fontWeight: '600',
+    color: '#f0ece4',
     marginBottom: 20,
   },
   title: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#fff',
+    fontSize: 22,
+    fontWeight: '600',
+    color: '#f0ece4',
     marginBottom: 16,
   },
   cameraContainer: {
     width: 280,
     height: 280,
-    borderRadius: 16,
+    borderRadius: 18,
     overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#2a2825',
     marginBottom: 20,
   },
   camera: {
     flex: 1,
   },
   hint: {
-    fontSize: 14,
-    color: '#666',
+    fontSize: 13,
+    color: '#5a5449',
     textAlign: 'center',
-    marginBottom: 20,
+    marginBottom: 24,
   },
   buttonRow: {
     flexDirection: 'row',
     gap: 12,
     marginTop: 20,
   },
-  cancelButton: {
+  secondaryBtn: {
     borderWidth: 1,
-    borderColor: '#444',
+    borderColor: '#2a2825',
     paddingHorizontal: 28,
     paddingVertical: 14,
-    borderRadius: 8,
+    borderRadius: 10,
   },
-  cancelButtonText: {
-    fontSize: 16,
+  secondaryBtnPressed: {
+    backgroundColor: '#111110',
+    borderColor: '#3a3530',
+  },
+  secondaryBtnText: {
+    fontSize: 15,
     fontWeight: '600',
-    color: '#888',
+    color: '#5a5449',
   },
-  primaryButton: {
+  primaryBtn: {
     backgroundColor: '#f7931a',
     paddingHorizontal: 28,
     paddingVertical: 14,
-    borderRadius: 8,
+    borderRadius: 10,
   },
-  primaryButtonText: {
-    fontSize: 16,
+  primaryBtnPressed: {
+    backgroundColor: '#d97e16',
+  },
+  primaryBtnText: {
+    fontSize: 15,
     fontWeight: '700',
-    color: '#000',
+    color: '#050505',
   },
 })

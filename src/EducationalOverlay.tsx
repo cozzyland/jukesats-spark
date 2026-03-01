@@ -14,9 +14,10 @@ export function EducationalOverlay({ title, content, onClose }: EducationalOverl
         <View style={styles.header}>
           <Text style={styles.title}>{title}</Text>
           <Pressable onPress={onClose} hitSlop={12}>
-            <MaterialCommunityIcons name="close" size={24} color="#888" />
+            <MaterialCommunityIcons name="close" size={22} color="#5a5449" />
           </Pressable>
         </View>
+        <View style={styles.accent} />
         <ScrollView style={styles.body} showsVerticalScrollIndicator={false}>
           {content.map((paragraph, i) => (
             <Text key={i} style={styles.paragraph}>
@@ -24,7 +25,10 @@ export function EducationalOverlay({ title, content, onClose }: EducationalOverl
             </Text>
           ))}
         </ScrollView>
-        <Pressable style={styles.dismissButton} onPress={onClose}>
+        <Pressable
+          style={({ pressed }) => [styles.dismissButton, pressed && styles.dismissPressed]}
+          onPress={onClose}
+        >
           <Text style={styles.dismissText}>Got it</Text>
         </Pressable>
       </View>
@@ -39,15 +43,17 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.85)',
+    backgroundColor: 'rgba(5, 5, 5, 0.88)',
     alignItems: 'center',
     justifyContent: 'center',
     padding: 24,
     zIndex: 10,
   },
   card: {
-    backgroundColor: '#1a1a1a',
-    borderRadius: 16,
+    backgroundColor: '#111110',
+    borderWidth: 1,
+    borderColor: '#2a2825',
+    borderRadius: 18,
     padding: 24,
     width: '100%',
     maxWidth: 360,
@@ -56,34 +62,46 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     marginBottom: 16,
   },
   title: {
-    fontSize: 20,
+    fontSize: 19,
     fontWeight: '700',
     color: '#f7931a',
     flex: 1,
     marginRight: 12,
+    lineHeight: 26,
+  },
+  accent: {
+    width: 32,
+    height: 2,
+    backgroundColor: '#f7931a',
+    borderRadius: 1,
+    marginBottom: 16,
+    opacity: 0.4,
   },
   body: {
     marginBottom: 20,
   },
   paragraph: {
-    fontSize: 15,
-    color: '#ccc',
+    fontSize: 14,
+    color: '#b5ad9f',
     lineHeight: 22,
-    marginBottom: 12,
+    marginBottom: 14,
   },
   dismissButton: {
     backgroundColor: '#f7931a',
-    paddingVertical: 12,
-    borderRadius: 8,
+    paddingVertical: 13,
+    borderRadius: 10,
     alignItems: 'center',
   },
+  dismissPressed: {
+    backgroundColor: '#d97e16',
+  },
   dismissText: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '700',
-    color: '#000',
+    color: '#050505',
   },
 })
