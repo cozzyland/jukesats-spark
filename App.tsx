@@ -451,12 +451,12 @@ export default function App() {
         {/* Wallet section */}
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionLabel}>WALLET</Text>
-          <Pressable onPress={() => setTooltip('send')} hitSlop={12}>
-            <MaterialCommunityIcons name="information-outline" size={13} color="#5a5449" />
+          <Pressable onPress={() => setTooltip('send')} hitSlop={12} style={styles.sectionInfoBtn}>
+            <MaterialCommunityIcons name="information-outline" size={12} color="#3a3530" />
           </Pressable>
         </View>
 
-        <View style={styles.walletRows}>
+        <View style={styles.walletGroup}>
           <Pressable
             style={({ pressed }) => [
               styles.walletRow,
@@ -472,6 +472,8 @@ export default function App() {
             <Text style={[styles.walletRowText, isOffline && styles.walletRowTextDim]}>Send</Text>
             <MaterialCommunityIcons name="chevron-right" size={18} color="#2a2825" />
           </Pressable>
+
+          <View style={styles.walletDivider} />
 
           <Pressable
             style={({ pressed }) => [
@@ -490,14 +492,17 @@ export default function App() {
           </Pressable>
 
           {isOffline && (
-            <Pressable
-              style={({ pressed }) => [styles.exitRow, pressed && styles.exitRowPressed]}
-              onPress={() => setOverlay({ kind: 'exit' })}
-            >
-              <MaterialCommunityIcons name="shield-alert-outline" size={18} color="#f7931a" />
-              <Text style={styles.exitRowText}>Emergency Exit</Text>
-              <MaterialCommunityIcons name="chevron-right" size={18} color="#2a2825" />
-            </Pressable>
+            <>
+              <View style={styles.walletDivider} />
+              <Pressable
+                style={({ pressed }) => [styles.exitRow, pressed && styles.exitRowPressed]}
+                onPress={() => setOverlay({ kind: 'exit' })}
+              >
+                <MaterialCommunityIcons name="shield-alert-outline" size={18} color="#f7931a" />
+                <Text style={styles.exitRowText}>Emergency Exit</Text>
+                <MaterialCommunityIcons name="chevron-right" size={18} color="#2a2825" />
+              </Pressable>
+            </>
           )}
         </View>
 
@@ -669,9 +674,12 @@ const styles = StyleSheet.create({
   },
   sectionHeader: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+    alignItems: 'baseline',
+    gap: 6,
     marginBottom: 12,
+  },
+  sectionInfoBtn: {
+    paddingBottom: 1,
   },
 
   // Feature cards
@@ -703,27 +711,28 @@ const styles = StyleSheet.create({
     color: '#5a5449',
   },
 
-  // Wallet rows
-  walletRows: {
-    gap: 8,
+  // Wallet group (single card container)
+  walletGroup: {
+    borderRadius: 14,
+    overflow: 'hidden',
   },
   walletRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#111110',
-    borderWidth: 1,
-    borderColor: '#2a2825',
-    borderRadius: 14,
     paddingVertical: 14,
-    paddingHorizontal: 16,
+    paddingHorizontal: 4,
     gap: 12,
   },
   walletRowPressed: {
-    backgroundColor: '#1a1918',
-    borderColor: '#3a3530',
+    backgroundColor: 'rgba(247, 147, 26, 0.04)',
   },
   walletRowDisabled: {
     opacity: 0.4,
+  },
+  walletDivider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: '#1a1918',
+    marginLeft: 52,
   },
   walletIcon: {
     width: 36,
@@ -750,16 +759,12 @@ const styles = StyleSheet.create({
   exitRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(247, 147, 26, 0.06)',
-    borderWidth: 1,
-    borderColor: 'rgba(247, 147, 26, 0.2)',
-    borderRadius: 14,
     paddingVertical: 14,
-    paddingHorizontal: 16,
+    paddingHorizontal: 4,
     gap: 12,
   },
   exitRowPressed: {
-    backgroundColor: 'rgba(247, 147, 26, 0.1)',
+    backgroundColor: 'rgba(247, 147, 26, 0.04)',
   },
   exitRowText: {
     flex: 1,
