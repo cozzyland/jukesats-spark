@@ -7,56 +7,20 @@ vi.mock('../db.js', async () => {
   return { createDb: () => createDb(':memory:') }
 })
 
-// Mock aspHealthMonitor before importing main
-vi.mock('../aspHealthMonitor.js', () => ({
-  AspHealthMonitor: vi.fn().mockImplementation(() => ({
-    start: vi.fn().mockResolvedValue(undefined),
-    stop: vi.fn(),
-    getStatus: vi.fn().mockReturnValue({
-      online: true,
-      lastSeen: Date.now(),
-      consecutiveFailures: 0,
-      cachedInfo: {
-        unilateralExitDelay: 604800n,
-        network: 'testnet4',
-        dust: 450n,
-        version: '0.3.0',
-      },
-    }),
-  })),
-}))
-
-// Mock vtxoChainCache before importing main
-vi.mock('../vtxoChainCache.js', () => ({
-  VtxoChainCache: vi.fn().mockImplementation(() => ({
-    start: vi.fn(),
-    stop: vi.fn(),
-    getCachedChain: vi.fn().mockReturnValue(null),
-    cacheAll: vi.fn().mockResolvedValue(undefined),
-  })),
-}))
-
 // Mock hotWallet before importing main
 vi.mock('../hotWallet.js', () => ({
   hotWallet: {
     init: vi.fn().mockResolvedValue(undefined),
     getBalanceStatus: vi.fn().mockResolvedValue({
       available: '50000',
-      settled: '50000',
-      preconfirmed: '0',
-      total: '50000',
-      recoverable: '0',
       status: 'ok',
       warning: null
     }),
-    getAddress: vi.fn().mockResolvedValue('tark1mockaddress123'),
-    sendReward: vi.fn().mockResolvedValue('mocktxid123'),
-    getVtxos: vi.fn().mockResolvedValue([]),
-    getBoardingUtxos: vi.fn().mockResolvedValue([]),
-    recoverSweptVtxos: vi.fn().mockResolvedValue(null),
-    renewIfNeeded: vi.fn().mockResolvedValue(null),
-    getIndexerProvider: vi.fn().mockReturnValue({}),
-    emergencyExit: vi.fn().mockResolvedValue({ phase: 'complete', vtxoTxids: [] }),
+    getAddress: vi.fn().mockResolvedValue('spark1pmockaddress12345678'),
+    sendReward: vi.fn().mockResolvedValue('mock-transfer-id-123'),
+    createDepositInvoice: vi.fn().mockResolvedValue('lnbc10u1mock...'),
+    getDepositAddress: vi.fn().mockResolvedValue('bc1pmockdepositaddress'),
+    shutdown: vi.fn(),
   }
 }))
 
@@ -81,39 +45,11 @@ describe('Server endpoints', () => {
     })
   })
 
-  describe('GET /asp-status', () => {
-    it('returns online status without auth', async () => {
-      const res = await request(app).get('/asp-status')
-      expect(res.status).toBe(200)
-      expect(res.body).toEqual({ online: true })
-      // Must NOT leak full status details
-      expect(res.body.lastSeen).toBeUndefined()
-      expect(res.body.cachedInfo).toBeUndefined()
-    })
-  })
-
-  describe('GET /admin/asp-status', () => {
-    it('returns full status with auth', async () => {
-      const res = await request(app)
-        .get('/admin/asp-status')
-        .set('Authorization', 'Bearer test-admin-token')
-      expect(res.status).toBe(200)
-      expect(res.body.online).toBe(true)
-      expect(res.body.lastSeen).toBeDefined()
-      expect(res.body.cachedInfo).toBeDefined()
-    })
-
-    it('rejects without auth', async () => {
-      const res = await request(app).get('/admin/asp-status')
-      expect(res.status).toBe(401)
-    })
-  })
-
   describe('POST /tap', () => {
     it('rejects missing fields', async () => {
       const res = await request(app)
         .post('/tap')
-        .send({ userArkAddress: 'tark1abc' })
+        .send({ userSparkAddress: 'spark1pabc' })
       expect(res.status).toBe(400)
       expect(res.body.error).toBeDefined()
     })
@@ -121,15 +57,15 @@ describe('Server endpoints', () => {
     it('rejects invalid address format', async () => {
       const res = await request(app)
         .post('/tap')
-        .send({ userArkAddress: 'invalid123', venueId: 'venue-1', nfcTagId: 'admin-test-tag' })
+        .send({ userSparkAddress: 'invalid123', venueId: 'venue-1', nfcTagId: 'admin-test-tag' })
       expect(res.status).toBe(400)
-      expect(res.body.error).toContain('Invalid ARK address')
+      expect(res.body.error).toContain('Invalid Spark address')
     })
 
     it('rejects unknown venue', async () => {
       const res = await request(app)
         .post('/tap')
-        .send({ userArkAddress: 'tark1useraabbccddeeffgghhii', venueId: 'unknown-venue', nfcTagId: 'admin-test-tag' })
+        .send({ userSparkAddress: 'spark1puseraabbccddeeffgghhii', venueId: 'unknown-venue', nfcTagId: 'admin-test-tag' })
       expect(res.status).toBe(400)
       expect(res.body.error).toContain('Unknown venue')
     })
@@ -137,10 +73,10 @@ describe('Server endpoints', () => {
     it('processes valid tap', async () => {
       const res = await request(app)
         .post('/tap')
-        .send({ userArkAddress: 'tark1newtestuserabcdefghi', venueId: 'venue-1', nfcTagId: 'admin-test-tag' })
+        .send({ userSparkAddress: 'spark1pnewtestuserabcdefghi', venueId: 'venue-1', nfcTagId: 'admin-test-tag' })
       expect(res.status).toBe(200)
       expect(res.body.success).toBe(true)
-      expect(res.body.txid).toBe('mocktxid123')
+      expect(res.body.txid).toBe('mock-transfer-id-123')
       expect(res.body.amount).toBe(330)
     })
   })
@@ -172,6 +108,31 @@ describe('Server endpoints', () => {
         .set('Authorization', 'Bearer test-admin-token')
       expect(res.status).toBe(200)
       expect(res.body.available).toBeDefined()
+    })
+
+    it('creates deposit invoice', async () => {
+      const res = await request(app)
+        .get('/admin/deposit-invoice?amount=1000')
+        .set('Authorization', 'Bearer test-admin-token')
+      expect(res.status).toBe(200)
+      expect(res.body.invoice).toBeDefined()
+      expect(res.body.amountSats).toBe(1000)
+    })
+
+    it('rejects deposit invoice without amount', async () => {
+      const res = await request(app)
+        .get('/admin/deposit-invoice')
+        .set('Authorization', 'Bearer test-admin-token')
+      expect(res.status).toBe(400)
+    })
+
+    it('returns deposit address', async () => {
+      const res = await request(app)
+        .get('/admin/deposit-address')
+        .set('Authorization', 'Bearer test-admin-token')
+      expect(res.status).toBe(200)
+      expect(res.body.address).toBeDefined()
+      expect(res.body.warning).toContain('Single-use')
     })
   })
 
@@ -217,20 +178,19 @@ describe('Server endpoints', () => {
 
   describe('NFC tag validation in /tap', () => {
     it('rejects tap with unregistered tag when tags exist', async () => {
-      // Tags were registered in previous tests, so tag validation is active
-      const address = 'tark1tagtest' + Date.now()
+      const address = 'spark1ptagtest' + Date.now()
       const res = await request(app)
         .post('/tap')
-        .send({ userArkAddress: address, venueId: 'venue-1', nfcTagId: 'fake-unknown-tag' })
+        .send({ userSparkAddress: address, venueId: 'venue-1', nfcTagId: 'fake-unknown-tag' })
       expect(res.status).toBe(400)
       expect(res.body.error).toContain('Unregistered NFC tag')
     })
 
     it('accepts tap with registered tag', async () => {
-      const address = 'tark1validtag' + Date.now()
+      const address = 'spark1pvalidtag' + Date.now()
       const res = await request(app)
         .post('/tap')
-        .send({ userArkAddress: address, venueId: 'venue-1', nfcTagId: 'admin-test-tag' })
+        .send({ userSparkAddress: address, venueId: 'venue-1', nfcTagId: 'admin-test-tag' })
       expect(res.status).toBe(200)
       expect(res.body.success).toBe(true)
     })
@@ -240,20 +200,20 @@ describe('Server endpoints', () => {
     it('returns 404 when disabled', async () => {
       const res = await request(app)
         .post('/simulate-tap')
-        .send({ userArkAddress: 'tark1user1' })
+        .send({ userSparkAddress: 'spark1puser1' })
       expect(res.status).toBe(404)
     })
   })
 
   describe('GET /stats', () => {
     it('returns 401 without auth', async () => {
-      const res = await request(app).get('/stats/tark1someuser')
+      const res = await request(app).get('/stats/spark1psomeuser')
       expect(res.status).toBe(401)
     })
 
     it('returns stats with auth', async () => {
       const res = await request(app)
-        .get('/stats/tark1someuser')
+        .get('/stats/spark1psomeuser')
         .set('Authorization', 'Bearer test-admin-token')
       expect(res.status).toBe(200)
       expect(res.body.totalTaps).toBeDefined()
@@ -262,12 +222,12 @@ describe('Server endpoints', () => {
 
   describe('Error responses', () => {
     it('does not leak error message on tap failure', async () => {
-      const address = 'tark1errtest' + Date.now()
+      const address = 'spark1perrtest' + Date.now()
       hotWallet.sendReward.mockRejectedValueOnce(new Error('Secret internal error details'))
 
       const res = await request(app)
         .post('/tap')
-        .send({ userArkAddress: address, venueId: 'venue-1', nfcTagId: 'admin-test-tag' })
+        .send({ userSparkAddress: address, venueId: 'venue-1', nfcTagId: 'admin-test-tag' })
 
       expect(res.status).toBe(500)
       expect(res.body.error).toBe('Failed to process tap')
@@ -277,13 +237,11 @@ describe('Server endpoints', () => {
 
   describe('Concurrency', () => {
     it('serializes concurrent taps for same user/venue — one 200, one 429', async () => {
-      // Use unique addresses to avoid interference from previous tests
-      const address = 'tark1concurrent' + Date.now()
+      const address = 'spark1pconcurrent' + Date.now()
 
-      // Fire two taps concurrently
       const [res1, res2] = await Promise.all([
-        request(app).post('/tap').send({ userArkAddress: address, venueId: 'venue-1', nfcTagId: 'admin-test-tag' }),
-        request(app).post('/tap').send({ userArkAddress: address, venueId: 'venue-1', nfcTagId: 'admin-test-tag' })
+        request(app).post('/tap').send({ userSparkAddress: address, venueId: 'venue-1', nfcTagId: 'admin-test-tag' }),
+        request(app).post('/tap').send({ userSparkAddress: address, venueId: 'venue-1', nfcTagId: 'admin-test-tag' })
       ])
 
       const statuses = [res1.status, res2.status].sort()
@@ -291,12 +249,12 @@ describe('Server endpoints', () => {
     })
 
     it('allows different users to tap concurrently (both 200)', async () => {
-      const addr1 = 'tark1parallelonea' + Date.now()
-      const addr2 = 'tark1paralleltwoa' + Date.now()
+      const addr1 = 'spark1pparallelonea' + Date.now()
+      const addr2 = 'spark1pparalleltwoa' + Date.now()
 
       const [res1, res2] = await Promise.all([
-        request(app).post('/tap').send({ userArkAddress: addr1, venueId: 'venue-1', nfcTagId: 'admin-test-tag' }),
-        request(app).post('/tap').send({ userArkAddress: addr2, venueId: 'venue-1', nfcTagId: 'admin-test-tag' })
+        request(app).post('/tap').send({ userSparkAddress: addr1, venueId: 'venue-1', nfcTagId: 'admin-test-tag' }),
+        request(app).post('/tap').send({ userSparkAddress: addr2, venueId: 'venue-1', nfcTagId: 'admin-test-tag' })
       ])
 
       expect(res1.status).toBe(200)
@@ -304,12 +262,12 @@ describe('Server endpoints', () => {
     })
 
     it('records failed send with status=failed', async () => {
-      const address = 'tark1failtest' + Date.now()
+      const address = 'spark1pfailtest' + Date.now()
       hotWallet.sendReward.mockRejectedValueOnce(new Error('Network error'))
 
       const res = await request(app)
         .post('/tap')
-        .send({ userArkAddress: address, venueId: 'venue-1', nfcTagId: 'admin-test-tag' })
+        .send({ userSparkAddress: address, venueId: 'venue-1', nfcTagId: 'admin-test-tag' })
 
       expect(res.status).toBe(500)
 
@@ -317,7 +275,7 @@ describe('Server endpoints', () => {
       hotWallet.sendReward.mockResolvedValueOnce('retrytxid123')
       const retry = await request(app)
         .post('/tap')
-        .send({ userArkAddress: address, venueId: 'venue-1', nfcTagId: 'admin-test-tag' })
+        .send({ userSparkAddress: address, venueId: 'venue-1', nfcTagId: 'admin-test-tag' })
 
       expect(retry.status).toBe(200)
       expect(retry.body.success).toBe(true)

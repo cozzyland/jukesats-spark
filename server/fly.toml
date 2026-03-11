@@ -1,14 +1,12 @@
-app = 'jukesats-server'
+app = 'jukesats-spark'
 primary_region = 'lhr'
 
 [build]
 
 [env]
   PORT = "3001"
-  ARK_SERVER_URL = "https://arkade.computer"
   DEFAULT_REWARD_SATS = "330"
   TAP_COOLDOWN_MS = "60000"
-  WALLET_STORAGE_PATH = "/data/hot-wallet"
   DAILY_SPEND_CAP_SATS = "100000"
   IP_RATE_LIMIT_MAX = "10"
   ENABLE_SIMULATE_TAP = "false"
@@ -30,7 +28,7 @@ primary_region = 'lhr'
   path = "/health"
 
 [mounts]
-  source = "jukesats_data"
+  source = "jukesats_spark_data"
   destination = "/data"
 
 [[vm]]

@@ -9,16 +9,19 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native'
-import { ArkAddress } from '@arkade-os/sdk'
-import { sendBitcoin } from './wallet'
+import { sendBitcoin, payLightningInvoice } from './wallet'
 
 // --- State Machine ---
 
+type SendTarget =
+  | { kind: 'spark'; address: string }
+  | { kind: 'invoice'; invoice: string; amountFromInvoice: boolean }
+
 type WithdrawStep =
   | { step: 'form' }
-  | { step: 'confirm'; address: string; amount: number }
-  | { step: 'sending'; address: string; amount: number }
-  | { step: 'success'; address: string; amount: number; txid: string }
+  | { step: 'confirm'; target: SendTarget; amount: number }
+  | { step: 'sending'; target: SendTarget; amount: number }
+  | { step: 'success'; target: SendTarget; amount: number; txid: string }
   | { step: 'error'; message: string }
 
 type Props = {
@@ -28,17 +31,84 @@ type Props = {
   initialAmount?: number
 }
 
+// --- Helpers ---
+
+function isLightningInvoice(s: string): boolean {
+  const lower = s.toLowerCase()
+  return lower.startsWith('lnbc') || lower.startsWith('lightning:')
+}
+
+function stripLightningPrefix(s: string): string {
+  const trimmed = s.trim()
+  if (trimmed.toLowerCase().startsWith('lightning:')) return trimmed.slice(10)
+  return trimmed
+}
+
+/** Decode sats amount from a BOLT11 invoice. Returns null for zero-amount invoices. */
+function decodeBolt11Amount(s: string): number | null {
+  const invoice = stripLightningPrefix(s).toLowerCase()
+  // HRP is everything before the last "1" separator
+  const lastOne = invoice.lastIndexOf('1')
+  if (lastOne === -1) return null
+  const hrp = invoice.slice(0, lastOne)
+
+  // Strip network prefix (lnbc, lntb, lnbcrt)
+  let rest = ''
+  if (hrp.startsWith('lnbcrt')) rest = hrp.slice(6)
+  else if (hrp.startsWith('lnbc')) rest = hrp.slice(4)
+  else if (hrp.startsWith('lntb')) rest = hrp.slice(4)
+  else return null
+
+  if (!rest) return null // zero-amount invoice
+
+  // Parse amount + optional multiplier (m, u, n, p)
+  const match = rest.match(/^(\d+)([munp])?$/)
+  if (!match) return null
+
+  const num = parseInt(match[1], 10)
+  const multiplier = match[2]
+
+  // Convert to sats (1 BTC = 100,000,000 sats)
+  const btcMultipliers: Record<string, number> = {
+    m: 100_000,       // milli-BTC → sats
+    u: 100,            // micro-BTC → sats
+    n: 0.1,            // nano-BTC → sats
+    p: 0.0001,         // pico-BTC → sats
+  }
+
+  if (multiplier) {
+    const sats = num * btcMultipliers[multiplier]
+    return Math.round(sats)
+  }
+
+  // No multiplier = amount in BTC
+  return num * 100_000_000
+}
+
+function isZeroAmountInvoice(s: string): boolean {
+  return isLightningInvoice(s) && decodeBolt11Amount(s) === null
+}
+
+function isSparkAddress(s: string): boolean {
+  return /^spark1p[a-z0-9]{20,200}$/.test(s)
+}
+
 // --- Validation ---
 
-function validateAddress(input: string): string | null {
+function validateDestination(input: string): { error: string | null; target: SendTarget | null } {
   const trimmed = input.trim()
-  if (!trimmed) return 'Address is required'
-  try {
-    ArkAddress.decode(trimmed)
-    return null
-  } catch {
-    return 'Invalid ARK address'
+  if (!trimmed) return { error: 'Address or invoice is required', target: null }
+
+  if (isLightningInvoice(trimmed)) {
+    const invoice = stripLightningPrefix(trimmed)
+    return { error: null, target: { kind: 'invoice', invoice, amountFromInvoice: false } }
   }
+
+  if (isSparkAddress(trimmed)) {
+    return { error: null, target: { kind: 'spark', address: trimmed } }
+  }
+
+  return { error: 'Enter a Lightning invoice or Spark address', target: null }
 }
 
 function validateAmount(input: string, balance: number): string | null {
@@ -55,12 +125,16 @@ function validateAmount(input: string, balance: number): string | null {
 
 export function WithdrawOverlay({ balance, onClose, initialAddress, initialAmount }: Props) {
   const prefilled = !!(initialAddress && initialAmount)
-  const [current, setCurrent] = useState<WithdrawStep>(
-    prefilled
-      ? { step: 'confirm', address: initialAddress, amount: initialAmount }
-      : { step: 'form' }
-  )
-  const [addressInput, setAddressInput] = useState(initialAddress ?? '')
+  const [current, setCurrent] = useState<WithdrawStep>(() => {
+    if (prefilled) {
+      const target: SendTarget = isSparkAddress(initialAddress)
+        ? { kind: 'spark', address: initialAddress }
+        : { kind: 'invoice', invoice: stripLightningPrefix(initialAddress), amountFromInvoice: false }
+      return { step: 'confirm', target, amount: initialAmount }
+    }
+    return { step: 'form' }
+  })
+  const [destinationInput, setDestinationInput] = useState(initialAddress ?? '')
   const [amountInput, setAmountInput] = useState(initialAmount ? String(initialAmount) : '')
   const [validationError, setValidationError] = useState('')
   const mountedRef = useRef(true)
@@ -69,23 +143,44 @@ export function WithdrawOverlay({ balance, onClose, initialAddress, initialAmoun
     return () => { mountedRef.current = false }
   }, [])
 
+  // Detect invoice properties from input
+  const inputIsInvoice = isLightningInvoice(destinationInput.trim())
+  const invoiceAmountSats = inputIsInvoice ? decodeBolt11Amount(destinationInput.trim()) : null
+  const invoiceIsZeroAmount = inputIsInvoice && invoiceAmountSats === null
+
   function handleContinue() {
-    const addrErr = validateAddress(addressInput)
-    if (addrErr) {
-      setValidationError(addrErr)
+    const { error, target } = validateDestination(destinationInput)
+    if (error || !target) {
+      setValidationError(error || 'Invalid input')
       return
     }
+
+    // For invoices with encoded amount, use that amount
+    if (target.kind === 'invoice' && invoiceAmountSats != null) {
+      if (invoiceAmountSats > balance) {
+        setValidationError(`Invoice amount (${invoiceAmountSats.toLocaleString()} sats) exceeds balance`)
+        return
+      }
+      target.amountFromInvoice = true
+      setValidationError('')
+      setCurrent({ step: 'confirm', target, amount: invoiceAmountSats })
+      return
+    }
+
+    // Amount required for Spark addresses and zero-amount invoices
     const amtErr = validateAmount(amountInput, balance)
     if (amtErr) {
       setValidationError(amtErr)
       return
     }
+
+    const amount = parseInt(amountInput, 10)
+    if (target.kind === 'invoice') {
+      target.amountFromInvoice = false
+    }
+
     setValidationError('')
-    setCurrent({
-      step: 'confirm',
-      address: addressInput.trim(),
-      amount: parseInt(amountInput, 10),
-    })
+    setCurrent({ step: 'confirm', target, amount })
   }
 
   function handleMax() {
@@ -95,13 +190,18 @@ export function WithdrawOverlay({ balance, onClose, initialAddress, initialAmoun
 
   async function handleSend() {
     if (current.step !== 'confirm') return
-    const { address, amount } = current
+    const { target, amount } = current
 
-    setCurrent({ step: 'sending', address, amount })
+    setCurrent({ step: 'sending', target, amount })
     try {
-      const txid = await sendBitcoin(address, amount)
+      let txid: string
+      if (target.kind === 'spark') {
+        txid = await sendBitcoin(target.address, amount)
+      } else {
+        txid = await payLightningInvoice(target.invoice, target.amountFromInvoice ? undefined : amount)
+      }
       if (!mountedRef.current) return
-      setCurrent({ step: 'success', address, amount, txid })
+      setCurrent({ step: 'success', target, amount, txid })
     } catch (error) {
       if (!mountedRef.current) return
       setCurrent({
@@ -134,38 +234,50 @@ export function WithdrawOverlay({ balance, onClose, initialAddress, initialAmoun
           <>
             <Text style={styles.title}>Send</Text>
 
-            <Text style={styles.label}>Recipient ARK address</Text>
+            <Text style={styles.label}>Lightning invoice or Spark address</Text>
             <TextInput
               style={styles.input}
-              value={addressInput}
-              onChangeText={(text) => { setAddressInput(text); setValidationError('') }}
-              placeholder="tark1... or ark1..."
+              value={destinationInput}
+              onChangeText={(text) => { setDestinationInput(text); setValidationError('') }}
+              placeholder="lnbc... or spark1p..."
               placeholderTextColor="#3a3530"
               autoCapitalize="none"
               autoCorrect={false}
               returnKeyType="next"
               keyboardAppearance="dark"
+              multiline
             />
 
-            <Text style={styles.label}>Amount (sats)</Text>
-            <View style={styles.amountRow}>
-              <TextInput
-                style={[styles.input, styles.amountInput]}
-                value={amountInput}
-                onChangeText={(text) => { setAmountInput(text); setValidationError('') }}
-                placeholder="0"
-                placeholderTextColor="#3a3530"
-                keyboardType="number-pad"
-                returnKeyType="done"
-                keyboardAppearance="dark"
-              />
-              <Pressable
-                style={({ pressed }) => [styles.maxBtn, pressed && styles.maxBtnPressed]}
-                onPress={handleMax}
-              >
-                <Text style={styles.maxBtnText}>Max</Text>
-              </Pressable>
-            </View>
+            {invoiceAmountSats != null ? (
+              <>
+                <Text style={styles.label}>Amount from invoice</Text>
+                <Text style={styles.invoiceAmountDisplay}>
+                  {invoiceAmountSats.toLocaleString()} sats
+                </Text>
+              </>
+            ) : (
+              <>
+                <Text style={styles.label}>Amount (sats)</Text>
+                <View style={styles.amountRow}>
+                  <TextInput
+                    style={[styles.input, styles.amountInput]}
+                    value={amountInput}
+                    onChangeText={(text) => { setAmountInput(text); setValidationError('') }}
+                    placeholder="0"
+                    placeholderTextColor="#3a3530"
+                    keyboardType="number-pad"
+                    returnKeyType="done"
+                    keyboardAppearance="dark"
+                  />
+                  <Pressable
+                    style={({ pressed }) => [styles.maxBtn, pressed && styles.maxBtnPressed]}
+                    onPress={handleMax}
+                  >
+                    <Text style={styles.maxBtnText}>Max</Text>
+                  </Pressable>
+                </View>
+              </>
+            )}
 
             <Text style={styles.availableText}>
               Available: {balance.toLocaleString()} sats
@@ -195,13 +307,21 @@ export function WithdrawOverlay({ balance, onClose, initialAddress, initialAmoun
         {current.step === 'confirm' && (
           <>
             <Text style={styles.title}>Confirm Send</Text>
-            <Text style={styles.amountDisplay}>
-              {current.amount.toLocaleString()}
+            {current.amount > 0 ? (
+              <>
+                <Text style={styles.amountDisplay}>
+                  {current.amount.toLocaleString()}
+                </Text>
+                <Text style={styles.amountUnit}>SATS</Text>
+              </>
+            ) : (
+              <Text style={styles.invoiceAmountHint}>Amount encoded in invoice</Text>
+            )}
+            <Text style={styles.toLabel}>
+              {current.target.kind === 'invoice' ? 'via Lightning' : 'to'}
             </Text>
-            <Text style={styles.amountUnit}>SATS</Text>
-            <Text style={styles.toLabel}>to</Text>
-            <Text style={styles.fullAddress} selectable>
-              {current.address}
+            <Text style={styles.fullAddress} selectable numberOfLines={3} ellipsizeMode="middle">
+              {current.target.kind === 'spark' ? current.target.address : current.target.invoice}
             </Text>
 
             <View style={styles.buttonRow}>
@@ -234,10 +354,14 @@ export function WithdrawOverlay({ balance, onClose, initialAddress, initialAmoun
         {current.step === 'success' && (
           <>
             <Text style={styles.successTitle}>Sent!</Text>
-            <Text style={styles.amountDisplay}>
-              {current.amount.toLocaleString()}
-            </Text>
-            <Text style={styles.amountUnit}>SATS</Text>
+            {current.amount > 0 && (
+              <>
+                <Text style={styles.amountDisplay}>
+                  {current.amount.toLocaleString()}
+                </Text>
+                <Text style={styles.amountUnit}>SATS</Text>
+              </>
+            )}
             <Text style={styles.txidLabel}>TRANSACTION</Text>
             <Text style={styles.txid} selectable numberOfLines={1} ellipsizeMode="middle">
               {current.txid}
@@ -406,6 +530,17 @@ const styles = StyleSheet.create({
     color: '#f7931a',
     marginTop: 2,
     marginBottom: 12,
+  },
+  invoiceAmountDisplay: {
+    fontSize: 22,
+    fontWeight: '500',
+    color: '#f0ece4',
+    marginBottom: 16,
+  },
+  invoiceAmountHint: {
+    fontSize: 15,
+    color: '#8a8578',
+    marginBottom: 8,
   },
   toLabel: {
     fontSize: 14,

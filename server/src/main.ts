@@ -8,8 +8,6 @@ import { timingSafeEqual } from 'crypto'
 import { hotWallet } from './hotWallet.js'
 import { TapTracker } from './tapTracker.js'
 import { createDb } from './db.js'
-import { AspHealthMonitor } from './aspHealthMonitor.js'
-import { VtxoChainCache } from './vtxoChainCache.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -62,23 +60,6 @@ app.get('/tap', (req, res) => {
 const db = createDb()
 export const tapTracker = new TapTracker(db)
 tapTracker.cleanStalePendingTaps()
-
-// ASP health monitor + VTXO chain cache (initialized after wallet in start())
-const ARK_SERVER_URL = process.env.ARK_SERVER_URL || 'https://arkade.computer'
-export let vtxoChainCache: VtxoChainCache | null = null
-export const aspHealthMonitor = new AspHealthMonitor(ARK_SERVER_URL, (status) => {
-  if (!status.online) {
-    console.warn(`[ASP] ASP declared offline after ${status.consecutiveFailures} consecutive failures`)
-    // Trigger emergency exit
-    hotWallet.emergencyExit(
-      vtxoChainCache ? (op) => vtxoChainCache!.getCachedChain(op) : undefined
-    ).catch((err) => {
-      console.error('[ASP] Emergency exit failed:', err)
-    })
-  } else {
-    console.log('[ASP] ASP back online')
-  }
-})
 
 // Per-user mutex for serializing tap processing without cross-user blocking
 class MutexMap {
@@ -143,7 +124,7 @@ function requireAdmin(req: express.Request, res: express.Response, next: express
   next()
 }
 
-const ARK_ADDRESS_RE = /^(t?ark1)[a-z0-9]{20,200}$/
+const SPARK_ADDRESS_RE = /^spark1p[a-z0-9]{20,200}$/
 
 /**
  * Get client IP (behind proxy)
@@ -157,32 +138,6 @@ function getClientIp(req: express.Request): string {
  */
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok' })
-})
-
-/**
- * ASP status (public — client polls this)
- */
-app.get('/asp-status', (_req, res) => {
-  const { online } = aspHealthMonitor.getStatus()
-  res.json({ online })
-})
-
-/**
- * ASP status (admin — full details)
- */
-app.get('/admin/asp-status', requireAdmin, (_req, res) => {
-  const status = aspHealthMonitor.getStatus()
-  res.json({
-    online: status.online,
-    lastSeen: status.lastSeen,
-    consecutiveFailures: status.consecutiveFailures,
-    cachedInfo: status.cachedInfo ? {
-      unilateralExitDelay: status.cachedInfo.unilateralExitDelay.toString(),
-      network: status.cachedInfo.network,
-      dust: status.cachedInfo.dust.toString(),
-      version: status.cachedInfo.version,
-    } : null,
-  })
 })
 
 /**
@@ -210,7 +165,7 @@ app.get('/admin/balance', requireAdmin, async (_req, res) => {
       todaySpend: tapTracker.getTodaySpend(),
       dailySpendCap: DAILY_SPEND_CAP_SATS,
       fundingInstructions: balanceStatus.status !== 'ok'
-        ? `Send ARK sats to ${address} or swap Lightning via Boltz Exchange`
+        ? `Send sats to Spark address ${address} or fund via Lightning invoice (GET /admin/deposit-invoice?amount=N)`
         : null
     })
   } catch (_error) {
@@ -219,51 +174,44 @@ app.get('/admin/balance', requireAdmin, async (_req, res) => {
 })
 
 /**
- * Debug: Get VTXOs to verify wallet state
+ * Debug: Get wallet state
  */
-app.get('/admin/debug', requireAdmin, async (req, res) => {
+app.get('/admin/debug', requireAdmin, async (_req, res) => {
   try {
     const address = await hotWallet.getAddress()
-    const vtxos = await hotWallet.getVtxos()
-    const boardingUtxos = await hotWallet.getBoardingUtxos()
     const balanceStatus = await hotWallet.getBalanceStatus()
-    res.json({
-      address,
-      vtxoCount: vtxos.length,
-      vtxos: vtxos.map(v => ({
-        txid: v.txid,
-        vout: v.vout,
-        value: v.value?.toString() || 'unknown',
-        virtualStatus: v.virtualStatus
-      })),
-      boardingUtxoCount: boardingUtxos.length,
-      boardingUtxos: boardingUtxos.map(u => ({
-        txid: u.txid,
-        vout: u.vout,
-        value: u.value?.toString() || 'unknown',
-        confirmed: u.status?.confirmed || false
-      })),
-      balance: balanceStatus
-    })
+    res.json({ address, balance: balanceStatus })
   } catch (error) {
     res.status(500).json({ error: 'Failed to get debug info', message: error instanceof Error ? error.message : 'Unknown error' })
   }
 })
 
 /**
- * Recover swept VTXOs (admin endpoint)
+ * Create Lightning invoice for funding hot wallet
  */
-app.post('/admin/recover', requireAdmin, async (req, res) => {
+app.get('/admin/deposit-invoice', requireAdmin, async (req, res) => {
   try {
-    const txid = await hotWallet.recoverSweptVtxos()
-    const balanceStatus = await hotWallet.getBalanceStatus()
-    res.json({
-      success: true,
-      txid: txid || 'No recovery needed',
-      balance: balanceStatus
-    })
+    const amount = parseInt(req.query.amount as string, 10)
+    if (isNaN(amount) || amount <= 0) {
+      return res.status(400).json({ error: 'amount query parameter required (positive integer sats)' })
+    }
+    const memo = (req.query.memo as string) || undefined
+    const invoice = await hotWallet.createDepositInvoice(amount, memo)
+    res.json({ invoice, amountSats: amount })
   } catch (error) {
-    res.status(500).json({ error: 'Failed to recover', message: error instanceof Error ? error.message : 'Unknown error' })
+    res.status(500).json({ error: 'Failed to create invoice', message: error instanceof Error ? error.message : 'Unknown error' })
+  }
+})
+
+/**
+ * Get single-use on-chain deposit address
+ */
+app.get('/admin/deposit-address', requireAdmin, async (_req, res) => {
+  try {
+    const address = await hotWallet.getDepositAddress()
+    res.json({ address, warning: 'Single-use address — do not reuse' })
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to get deposit address', message: error instanceof Error ? error.message : 'Unknown error' })
   }
 })
 
@@ -312,7 +260,7 @@ type TapResult = TapSuccess | TapFailure
 /**
  * Core tap processing logic with mutex for concurrency control
  */
-export async function processTap(userArkAddress: string, venueId: string, nfcTagId: string, ip: string, idempotencyKey?: string): Promise<TapResult> {
+export async function processTap(userSparkAddress: string, venueId: string, nfcTagId: string, ip: string, idempotencyKey?: string): Promise<TapResult> {
   // Check idempotency key before acquiring mutex
   if (idempotencyKey) {
     const existing = tapTracker.findByIdempotencyKey(idempotencyKey)
@@ -322,13 +270,13 @@ export async function processTap(userArkAddress: string, venueId: string, nfcTag
         txid: existing.txid,
         amount: existing.reward_sats,
         message: `You earned ${existing.reward_sats} sats!`,
-        totalTaps: tapTracker.getUserTapCount(userArkAddress)
+        totalTaps: tapTracker.getUserTapCount(userSparkAddress)
       }
     }
   }
 
   // Acquire per-user mutex for rate-limit checks + INSERT pending
-  const release = await tapMutex.acquire(userArkAddress)
+  const release = await tapMutex.acquire(userSparkAddress)
   let tapId: number
   const rewardSats = DEFAULT_REWARD_SATS
 
@@ -363,7 +311,7 @@ export async function processTap(userArkAddress: string, venueId: string, nfcTag
     }
 
     // Check per-address rate limiting
-    const canTap = tapTracker.canTap(userArkAddress, venueId, TAP_COOLDOWN_MS)
+    const canTap = tapTracker.canTap(userSparkAddress, venueId, TAP_COOLDOWN_MS)
     if (!canTap.allowed) {
       return {
         success: false,
@@ -387,21 +335,21 @@ export async function processTap(userArkAddress: string, venueId: string, nfcTag
     }
 
     // Insert pending tap (holds the slot for rate limiting)
-    tapId = tapTracker.beginTap(userArkAddress, venueId, nfcTagId, rewardSats, ip, idempotencyKey)
+    tapId = tapTracker.beginTap(userSparkAddress, venueId, nfcTagId, rewardSats, ip, idempotencyKey)
   } finally {
     release()
   }
 
   // Send reward outside mutex (slow network call)
   try {
-    const txid = await hotWallet.sendReward(userArkAddress, rewardSats)
+    const txid = await hotWallet.sendReward(userSparkAddress, rewardSats)
     tapTracker.completeTap(tapId, txid)
     return {
       success: true,
       txid,
       amount: rewardSats,
       message: `You earned ${rewardSats} sats!`,
-      totalTaps: tapTracker.getUserTapCount(userArkAddress)
+      totalTaps: tapTracker.getUserTapCount(userSparkAddress)
     }
   } catch (error) {
     tapTracker.failTap(tapId)
@@ -413,21 +361,21 @@ export async function processTap(userArkAddress: string, venueId: string, nfcTag
  * Process a tap reward
  */
 app.post('/tap', async (req, res) => {
-  const { userArkAddress, venueId, nfcTagId } = req.body
+  const { userSparkAddress, venueId, nfcTagId } = req.body
   const ip = getClientIp(req)
 
-  if (!userArkAddress || !venueId || !nfcTagId) {
+  if (!userSparkAddress || !venueId || !nfcTagId) {
     return res.status(400).json({ error: 'Missing required fields' })
   }
 
-  if (!ARK_ADDRESS_RE.test(userArkAddress)) {
-    return res.status(400).json({ error: 'Invalid ARK address format' })
+  if (!SPARK_ADDRESS_RE.test(userSparkAddress)) {
+    return res.status(400).json({ error: 'Invalid Spark address format' })
   }
 
   const idempotencyKey = req.headers['idempotency-key'] as string | undefined
 
   try {
-    const result = await processTap(userArkAddress, venueId, nfcTagId, ip, idempotencyKey)
+    const result = await processTap(userSparkAddress, venueId, nfcTagId, ip, idempotencyKey)
     if (!result.success) {
       return res.status(result.status || 500).json(result)
     }
@@ -441,21 +389,21 @@ app.post('/tap', async (req, res) => {
 /**
  * Get tap stats for a user (admin — full details)
  */
-app.get('/stats/:userArkAddress', requireAdmin, (req, res) => {
-  const { userArkAddress } = req.params
-  const stats = tapTracker.getUserStats(userArkAddress, DEFAULT_REWARD_SATS)
+app.get('/stats/:userSparkAddress', requireAdmin, (req, res) => {
+  const { userSparkAddress } = req.params
+  const stats = tapTracker.getUserStats(userSparkAddress, DEFAULT_REWARD_SATS)
   res.json(stats)
 })
 
 /**
  * Get public tap count for a user (for stamp card)
  */
-app.get('/user-stats/:userArkAddress', (req, res) => {
-  const { userArkAddress } = req.params
-  if (!ARK_ADDRESS_RE.test(userArkAddress)) {
-    return res.status(400).json({ error: 'Invalid ARK address format' })
+app.get('/user-stats/:userSparkAddress', (req, res) => {
+  const { userSparkAddress } = req.params
+  if (!SPARK_ADDRESS_RE.test(userSparkAddress)) {
+    return res.status(400).json({ error: 'Invalid Spark address format' })
   }
-  const totalTaps = tapTracker.getUserTapCount(userArkAddress)
+  const totalTaps = tapTracker.getUserTapCount(userSparkAddress)
   res.json({ totalTaps })
 })
 
@@ -468,19 +416,19 @@ app.post('/simulate-tap', async (req, res) => {
     return res.status(404).json({ error: 'Not found' })
   }
 
-  const { userArkAddress } = req.body
+  const { userSparkAddress } = req.body
   const ip = getClientIp(req)
 
-  if (!userArkAddress) {
-    return res.status(400).json({ error: 'userArkAddress required' })
+  if (!userSparkAddress) {
+    return res.status(400).json({ error: 'userSparkAddress required' })
   }
 
-  if (!ARK_ADDRESS_RE.test(userArkAddress)) {
-    return res.status(400).json({ error: 'Invalid ARK address format' })
+  if (!SPARK_ADDRESS_RE.test(userSparkAddress)) {
+    return res.status(400).json({ error: 'Invalid Spark address format' })
   }
 
   try {
-    const result = await processTap(userArkAddress, 'test-venue-001', 'test-tag-001', ip)
+    const result = await processTap(userSparkAddress, 'test-venue-001', 'test-tag-001', ip)
     if (!result.success) {
       return res.status(result.status || 500).json(result)
     }
@@ -510,38 +458,12 @@ export async function start() {
   try {
     await hotWallet.init()
 
-    // Start VTXO chain cache (pre-caches chain data for offline unrolling)
-    const dataDir = path.dirname(process.env.WALLET_STORAGE_PATH || './data/hot-wallet')
-    vtxoChainCache = new VtxoChainCache(
-      hotWallet.getIndexerProvider(),
-      () => hotWallet.getVtxos(),
-      path.join(dataDir, 'vtxo-chains'),
-    )
-    vtxoChainCache.start()
-
-    // Start ASP health monitoring
-    aspHealthMonitor.start().catch((err) => {
-      console.error('[ASP] Failed initial health check:', err)
-    })
-
-    // Start periodic VTXO renewal and recovery check
-    setInterval(async () => {
-      try {
-        await hotWallet.renewIfNeeded()
-        await hotWallet.recoverSweptVtxos()
-      } catch (error) {
-        console.error('[Server] VTXO maintenance error:', error)
-      }
-    }, 60 * 60 * 1000) // Check every hour
-
     const server = app.listen(PORT, () => {
       console.log(`[Server] Listening on port ${PORT}`)
     })
 
     const shutdown = (signal: string) => {
       console.log(`[Server] ${signal} received, shutting down...`)
-      aspHealthMonitor.stop()
-      vtxoChainCache?.stop()
       hotWallet.shutdown()
       server.close(() => {
         db.close()

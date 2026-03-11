@@ -12,17 +12,13 @@ import { StatusBar } from 'expo-status-bar'
 import { MaterialCommunityIcons } from '@expo/vector-icons'
 import * as SplashScreen from 'expo-splash-screen'
 import * as Linking from 'expo-linking'
-import AsyncStorage from '@react-native-async-storage/async-storage'
-import { initWallet, getAddress, getWallet, getCachedAddress } from './src/wallet'
+import { initWallet, getAddress, getBalance, getCachedAddress, onTransferReceived } from './src/wallet'
 import { WithdrawOverlay } from './src/WithdrawOverlay'
 import { QRReceiveScreen } from './src/QRReceiveScreen'
 import { QRSendScreen } from './src/QRSendScreen'
 import { EducationalOverlay } from './src/EducationalOverlay'
-import { useAspHealth } from './src/aspHealth'
-import { AspHealthBanner } from './src/AspHealthBanner'
-import { UnilateralExitOverlay } from './src/UnilateralExitOverlay'
 
-const API_URL = 'https://jukesats-server.fly.dev'
+const API_URL = 'https://jukesats-spark.fly.dev'
 const REWARD_SATS = 330
 
 // --- Educational Content ---
@@ -57,8 +53,8 @@ const TOOLTIPS: Record<TooltipKey, { title: string; content: string[] }> = {
   send: {
     title: 'Your real Bitcoin wallet.',
     content: [
-      "This is a Layer 2 (L2) Bitcoin wallet. Your sats are real Bitcoin — not tokens, not IOUs.",
-      "Layer 2 means faster, cheaper transactions while still being secured by the Bitcoin network.",
+      "This is a Spark wallet. Your sats are real Bitcoin — not tokens, not IOUs.",
+      "Spark transfers are instant and fee-free. You can also send and receive via the Lightning Network.",
       "Send to a friend's wallet, move to your own hardware wallet, or pay for anything that accepts Bitcoin.",
       'Unlike loyalty points locked to one app, your sats work everywhere on the Bitcoin network.',
     ],
@@ -105,14 +101,14 @@ function parseDeepLink(url: string | null): { venueId: string; tagId: string } |
 }
 
 async function submitTap(
-  userArkAddress: string,
+  userSparkAddress: string,
   venueId: string,
   nfcTagId: string
 ): Promise<TapResult> {
   const res = await fetch(`${API_URL}/tap`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ userArkAddress, venueId, nfcTagId }),
+    body: JSON.stringify({ userSparkAddress, venueId, nfcTagId }),
   })
 
   if (res.status === 429) {
@@ -133,9 +129,9 @@ async function submitTap(
   return body as TapResult
 }
 
-async function fetchTapCount(userArkAddress: string): Promise<number> {
+async function fetchTapCount(userSparkAddress: string): Promise<number> {
   try {
-    const res = await fetch(`${API_URL}/user-stats/${userArkAddress}`)
+    const res = await fetch(`${API_URL}/user-stats/${userSparkAddress}`)
     if (!res.ok) return 0
     const body = await res.json()
     return typeof body.totalTaps === 'number' ? body.totalTaps : 0
@@ -154,10 +150,7 @@ export default function App() {
     | { kind: 'receive' }
     | { kind: 'scan' }
     | { kind: 'send'; address: string; amount: number | null }
-    | { kind: 'exitInfo' }
-    | { kind: 'exit' }
   >(null)
-  const aspHealth = useAspHealth()
   const [tapCount, setTapCount] = useState(0)
   const [tooltip, setTooltip] = useState<TooltipKey | null>(null)
 
@@ -242,18 +235,6 @@ export default function App() {
           const tapResult = await submitTap(addr, tapParams.venueId, tapParams.tagId)
           await handleTapResult(tapResult, addr)
         } else {
-          // Check for in-progress exit on cold start
-          const exitState = await AsyncStorage.getItem('unilateral-exit-state')
-          if (exitState) {
-            const parsed = JSON.parse(exitState)
-            if (parsed.vtxoTxids?.length > 0) {
-              const balance = await getBalance()
-              setState({ kind: 'ready', balance, address: addr })
-              setOverlay({ kind: 'exit' })
-              return
-            }
-          }
-
           const [balance, count] = await Promise.all([getBalance(), fetchTapCount(addr)])
           setTapCount(count)
           setState({ kind: 'ready', balance, address: addr })
@@ -319,23 +300,29 @@ export default function App() {
     }
   }
 
-  async function getBalance(): Promise<number> {
-    try {
-      const w = getWallet()
-      const bal = await w.getBalance()
-      console.log('[Balance]', JSON.stringify(bal))
-      return Number(bal.available)
-    } catch {
-      return 0
-    }
-  }
+  const [refreshing, setRefreshing] = useState(false)
 
   async function refreshBalance() {
     const addr = getAddress()
     if (!addr) return
-    const balance = await getBalance()
-    setState({ kind: 'ready', balance, address: addr })
+    setRefreshing(true)
+    try {
+      const balance = await getBalance()
+      setState({ kind: 'ready', balance, address: addr })
+    } finally {
+      setRefreshing(false)
+    }
   }
+
+  // Listen for incoming transfers in real-time via Spark SDK events
+  useEffect(() => {
+    if (state.kind !== 'ready' && state.kind !== 'tapSuccess') return
+    const unsub = onTransferReceived((balanceSats) => {
+      const addr = getAddress()
+      if (addr) setState({ kind: 'ready', balance: balanceSats, address: addr })
+    })
+    return unsub
+  }, [state.kind])
 
   // --- Render ---
 
@@ -393,28 +380,25 @@ export default function App() {
   // Ready or TapSuccess
   const balance = state.balance
   const address = state.address
-  const isOffline = aspHealth === 'offline'
 
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.screen}>
-        {/* ASP Health Banner */}
-        {isOffline && (
-          <AspHealthBanner onPress={() => setOverlay({ kind: 'exitInfo' })} />
-        )}
-
         {/* Brand header */}
         <Text style={styles.brand}>JUKESATS</Text>
 
-        {/* Balance hero */}
-        <View style={styles.balanceHero}>
+        {/* Balance hero — tap to refresh */}
+        <Pressable onPress={refreshBalance} style={styles.balanceHero}>
           <View style={styles.balanceGlow} />
           <Text style={styles.balanceAmount}>{balance.toLocaleString()}</Text>
-          <Pressable onPress={() => setTooltip('sats')} style={styles.unitRow} hitSlop={12}>
-            <Text style={styles.balanceUnit}>SATS</Text>
-            <MaterialCommunityIcons name="information-outline" size={13} color="#5a5449" />
-          </Pressable>
-        </View>
+          <View style={styles.unitRow}>
+            <Pressable onPress={() => setTooltip('sats')} hitSlop={12} style={styles.unitRow}>
+              <Text style={styles.balanceUnit}>SATS</Text>
+              <MaterialCommunityIcons name="information-outline" size={13} color="#5a5449" />
+            </Pressable>
+            {refreshing && <ActivityIndicator size="small" color="#f7931a" style={{ marginLeft: 8 }} />}
+          </View>
+        </Pressable>
 
         {/* Tap count */}
         {tapCount > 0 && (
@@ -460,16 +444,14 @@ export default function App() {
           <Pressable
             style={({ pressed }) => [
               styles.walletRow,
-              pressed && !isOffline && styles.walletRowPressed,
-              isOffline && styles.walletRowDisabled,
+              pressed && styles.walletRowPressed,
             ]}
-            onPress={() => !isOffline && setOverlay({ kind: 'scan' })}
-            disabled={isOffline}
+            onPress={() => setOverlay({ kind: 'scan' })}
           >
-            <View style={[styles.walletIcon, isOffline && styles.walletIconDim]}>
-              <MaterialCommunityIcons name="arrow-up" size={18} color={isOffline ? '#3a3530' : '#f7931a'} />
+            <View style={styles.walletIcon}>
+              <MaterialCommunityIcons name="arrow-up" size={18} color="#f7931a" />
             </View>
-            <Text style={[styles.walletRowText, isOffline && styles.walletRowTextDim]}>Send</Text>
+            <Text style={styles.walletRowText}>Send</Text>
             <MaterialCommunityIcons name="chevron-right" size={18} color="#2a2825" />
           </Pressable>
 
@@ -478,32 +460,16 @@ export default function App() {
           <Pressable
             style={({ pressed }) => [
               styles.walletRow,
-              pressed && !isOffline && styles.walletRowPressed,
-              isOffline && styles.walletRowDisabled,
+              pressed && styles.walletRowPressed,
             ]}
-            onPress={() => !isOffline && setOverlay({ kind: 'receive' })}
-            disabled={isOffline}
+            onPress={() => setOverlay({ kind: 'receive' })}
           >
-            <View style={[styles.walletIcon, isOffline && styles.walletIconDim]}>
-              <MaterialCommunityIcons name="arrow-down" size={18} color={isOffline ? '#3a3530' : '#f7931a'} />
+            <View style={styles.walletIcon}>
+              <MaterialCommunityIcons name="arrow-down" size={18} color="#f7931a" />
             </View>
-            <Text style={[styles.walletRowText, isOffline && styles.walletRowTextDim]}>Receive</Text>
+            <Text style={styles.walletRowText}>Receive</Text>
             <MaterialCommunityIcons name="chevron-right" size={18} color="#2a2825" />
           </Pressable>
-
-          {isOffline && (
-            <>
-              <View style={styles.walletDivider} />
-              <Pressable
-                style={({ pressed }) => [styles.exitRow, pressed && styles.exitRowPressed]}
-                onPress={() => setOverlay({ kind: 'exit' })}
-              >
-                <MaterialCommunityIcons name="shield-alert-outline" size={18} color="#f7931a" />
-                <Text style={styles.exitRowText}>Emergency Exit</Text>
-                <MaterialCommunityIcons name="chevron-right" size={18} color="#2a2825" />
-              </Pressable>
-            </>
-          )}
         </View>
 
         {/* Tap success overlay */}
@@ -527,6 +493,9 @@ export default function App() {
             onScanned={(result) => {
               setOverlay({ kind: 'send', address: result.address, amount: result.amount })
             }}
+            onManualEntry={() => {
+              setOverlay({ kind: 'send', address: '', amount: null })
+            }}
             onClose={() => setOverlay(null)}
           />
         )}
@@ -540,28 +509,6 @@ export default function App() {
               setOverlay(null)
               refreshBalance()
             }}
-          />
-        )}
-
-        {overlay?.kind === 'exit' && (
-          <UnilateralExitOverlay
-            onClose={() => {
-              setOverlay(null)
-              refreshBalance()
-            }}
-          />
-        )}
-
-        {overlay?.kind === 'exitInfo' && (
-          <EducationalOverlay
-            title="Your funds are safe."
-            content={[
-              'The ASP (Ark Service Provider) is currently unreachable. This means you cannot send or receive sats through the normal Ark protocol.',
-              'However, your funds are NOT lost. The Ark protocol is designed so you can always recover your bitcoin to the main Bitcoin blockchain — without needing the ASP.',
-              'This is called a "unilateral exit." Your wallet holds pre-signed Bitcoin transactions that can be broadcast on-chain at any time.',
-              'To exit, you\'ll need a small amount of on-chain BTC for miner fees. The process takes some time due to Bitcoin\'s security timelocks, but your funds are always yours.',
-            ]}
-            onClose={() => setOverlay(null)}
           />
         )}
 
@@ -726,9 +673,6 @@ const styles = StyleSheet.create({
   walletRowPressed: {
     backgroundColor: 'rgba(247, 147, 26, 0.04)',
   },
-  walletRowDisabled: {
-    opacity: 0.4,
-  },
   walletDivider: {
     height: StyleSheet.hairlineWidth,
     backgroundColor: '#1a1918',
@@ -742,37 +686,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  walletIconDim: {
-    backgroundColor: 'rgba(247, 147, 26, 0.03)',
-  },
   walletRowText: {
     flex: 1,
     fontSize: 15,
     fontWeight: '600',
     color: '#f0ece4',
   },
-  walletRowTextDim: {
-    color: '#3a3530',
-  },
-
-  // Emergency exit row
-  exitRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 14,
-    paddingHorizontal: 4,
-    gap: 12,
-  },
-  exitRowPressed: {
-    backgroundColor: 'rgba(247, 147, 26, 0.04)',
-  },
-  exitRowText: {
-    flex: 1,
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#f7931a',
-  },
-
   // Tap success overlay
   tapOverlay: {
     position: 'absolute',
